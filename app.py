@@ -163,6 +163,52 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
 
             browser.close()
 
+        # 修正順序:根據檔名編號排序
+        if len(img_urls) > 1:
+            try:
+                import re
+
+                # 提取所有圖片的編號
+                url_with_numbers = []
+                for url in img_urls:
+                    match = re.search(r"_(\d+)\.(jpg|jpeg|png|gif)", url)
+                    if match:
+                        number = int(match.group(1))
+                        url_with_numbers.append((number, url))
+                    else:
+                        url_with_numbers.append(
+                            (float("inf"), url)
+                        )  # 無法提取編號的放最後
+
+                helper.debug_print(
+                    f"提取到的編號: {[num for num, _ in url_with_numbers[:10]]}"
+                )
+
+                # 檢查是否需要排序(前幾張編號是否已經是遞增的)
+                check_count = min(5, len(url_with_numbers))
+                first_few_numbers = [num for num, _ in url_with_numbers[:check_count]]
+
+                # 檢查前幾張是否已經排序好
+                is_sorted = all(
+                    first_few_numbers[i] <= first_few_numbers[i + 1]
+                    for i in range(len(first_few_numbers) - 1)
+                    if first_few_numbers[i] != float("inf")
+                    and first_few_numbers[i + 1] != float("inf")
+                )
+
+                if not is_sorted:
+                    # 按編號排序
+                    url_with_numbers.sort(key=lambda x: x[0])
+                    img_urls = [url for _, url in url_with_numbers]
+                    helper.debug_print(
+                        f"圖片順序已修正,排序後前 5 張編號: {[num for num, _ in url_with_numbers[:5]]}"
+                    )
+                else:
+                    helper.debug_print("圖片順序正確,無需調整")
+
+            except Exception as e:
+                helper.debug_print(f"順序修正時發生錯誤: {e},保持原順序")
+
         elapsed = helper.calculate_elapsed_time(start_time)
         return DownloadResult(
             total_images=len(img_elements),
