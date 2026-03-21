@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: write
-  models: read
 
 env:
   IMAGE_NAME: naver-blog-image-downloader-lambda
@@ -97,10 +96,10 @@ jobs:
           echo "$COMMITS" > /tmp/commits.txt
           cat /tmp/commits.txt
 
-      - name: Generate release notes with GitHub Copilot (Claude Sonnet 4.6)
+      - name: Generate release notes with Ollama Cloud (qwen3-coder-next)
         id: release_notes
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
         run: |
           COMMITS=$(cat /tmp/commits.txt)
           TAG="v${{ steps.image_tag.outputs.tag }}"
@@ -125,26 +124,25 @@ jobs:
           PROMPT="${PROMPT/__COMMITS__/$COMMITS}"
 
           BODY=$(jq -n \
-            --arg model "claude-sonnet-4-6" \
+            --arg model "qwen3-coder-next:cloud" \
             --arg prompt "$PROMPT" \
-            '{model: $model, messages: [{role: "user", content: $prompt}]}')
+            '{model: $model, messages: [{role: "user", content: $prompt}], stream: false}')
 
-          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" "https://models.github.ai/inference/chat/completions" \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Content-Type: application/json" \
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" "https://ollama.com/api/chat" \
+            -H "Authorization: Bearer $OLLAMA_API_KEY" \
             -d "$BODY")
 
           HTTP_STATUS=$(echo "$RESPONSE" | tail -1 | sed 's/HTTP_STATUS://')
           RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
 
           echo "API HTTP Status: $HTTP_STATUS"
-          echo "API Response: $RESPONSE_BODY"
 
-          echo "$RESPONSE_BODY" | jq -r '.choices[0].message.content' > /tmp/release_notes.md
+          echo "$RESPONSE_BODY" | jq -r '.message.content' > /tmp/release_notes.md
 
           # 若 AI 生成失敗，使用 commit 記錄作為 fallback
           if [ ! -s /tmp/release_notes.md ] || grep -q "^null$" /tmp/release_notes.md; then
             echo "⚠️ AI 生成失敗 (HTTP $HTTP_STATUS)，使用 commit 記錄作為 Release Notes"
+            echo "API Response: $RESPONSE_BODY"
             {
               echo "## 變更記錄"
               echo ""
