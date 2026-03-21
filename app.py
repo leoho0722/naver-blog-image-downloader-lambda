@@ -280,7 +280,8 @@ def _handle_status(body):
     response_body = {"job_id": job_id, "status": job["status"]}
     if job.get("result"):
         response_body["result"] = job["result"]
-    response = build_response(200, response_body)
+    status_code = 500 if job["status"] == JobStatus.FAILED else 200
+    response = build_response(status_code, response_body)
     helper.debug_print(f"Response: {response}")
     return response
 
