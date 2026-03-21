@@ -1,6 +1,7 @@
 import json
 
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
 
 import helper
 from data_models import DownloadResult
@@ -59,16 +60,12 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
                 pass
 
             frame = page.frame(name="mainFrame") or page
-            helper.debug_print(
-                f"使用 frame: {'mainFrame' if page.frame(name='mainFrame') else 'page'}"
-            )
+            helper.debug_print(f"使用 frame: {'mainFrame' if page.frame(name='mainFrame') else 'page'}")
 
             # 等待圖片載入
             try:
                 helper.debug_print("等待圖片元素載入...")
-                frame.wait_for_selector(
-                    "img.se-image-resource.egjs-visible", timeout=10000
-                )
+                frame.wait_for_selector("img.se-image-resource.egjs-visible", timeout=10000)
                 helper.debug_print("圖片元素已載入")
             except PlaywrightTimeoutError:
                 errors.append("等待圖片元素超時")
@@ -87,9 +84,7 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
             # 額外等待確保所有圖片都載入
             page.wait_for_timeout(500)
 
-            img_elements = frame.query_selector_all(
-                "img.se-image-resource.egjs-visible"
-            )
+            img_elements = frame.query_selector_all("img.se-image-resource.egjs-visible")
             helper.debug_print(f"找到 {len(img_elements)} 張圖片")
 
             if not img_elements:
@@ -111,10 +106,8 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
 
                     # 等待彈窗出現
                     popup_img = None
-                    for attempt in range(8):
-                        popup_img_el = frame.query_selector(
-                            "div.cpv__img_wrap img.cpv__img"
-                        )
+                    for _attempt in range(8):
+                        popup_img_el = frame.query_selector("div.cpv__img_wrap img.cpv__img")
                         if popup_img_el:
                             popup_img = popup_img_el
                             helper.debug_print(f"第 {idx + 1} 張圖片彈窗已出現")
@@ -176,13 +169,9 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
                         number = int(match.group(1))
                         url_with_numbers.append((number, url))
                     else:
-                        url_with_numbers.append(
-                            (float("inf"), url)
-                        )  # 無法提取編號的放最後
+                        url_with_numbers.append((float("inf"), url))  # 無法提取編號的放最後
 
-                helper.debug_print(
-                    f"提取到的編號: {[num for num, _ in url_with_numbers[:10]]}"
-                )
+                helper.debug_print(f"提取到的編號: {[num for num, _ in url_with_numbers[:10]]}")
 
                 # 檢查是否需要排序(前幾張編號是否已經是遞增的)
                 check_count = min(5, len(url_with_numbers))
@@ -192,17 +181,14 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
                 is_sorted = all(
                     first_few_numbers[i] <= first_few_numbers[i + 1]
                     for i in range(len(first_few_numbers) - 1)
-                    if first_few_numbers[i] != float("inf")
-                    and first_few_numbers[i + 1] != float("inf")
+                    if first_few_numbers[i] != float("inf") and first_few_numbers[i + 1] != float("inf")
                 )
 
                 if not is_sorted:
                     # 按編號排序
                     url_with_numbers.sort(key=lambda x: x[0])
                     img_urls = [url for _, url in url_with_numbers]
-                    helper.debug_print(
-                        f"圖片順序已修正,排序後前 5 張編號: {[num for num, _ in url_with_numbers[:5]]}"
-                    )
+                    helper.debug_print(f"圖片順序已修正,排序後前 5 張編號: {[num for num, _ in url_with_numbers[:5]]}")
                 else:
                     helper.debug_print("圖片順序正確,無需調整")
 
@@ -227,7 +213,7 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
 def lambda_handler(event, context):
     request_start_time = helper.get_current_time()
 
-    helper.debug_print("Event: {}".format(event))
+    helper.debug_print(f"Event: {event}")
 
     # 從 event 中取得 Naver Blog URL
     blog_url = None
@@ -236,20 +222,20 @@ def lambda_handler(event, context):
     # 如果 event 是字串，嘗試將其解析為 JSON
     if isinstance(event, str):
         event = json.loads(event or "{}")
-        helper.debug_print("Raw Request Body: {}".format(event))
+        helper.debug_print(f"Raw Request Body: {event}")
 
     # 如果 event 是字典，直接使用
     if isinstance(event, dict):
-        helper.debug_print("Raw Request Body: {}".format(event))
+        helper.debug_print(f"Raw Request Body: {event}")
 
     # 2. 判斷 event 結構中是否有 body，還是直接包含參數
     if "body" in event:
         body = event["body"]
         if isinstance(body, str):
             body = json.loads(body or "{}")
-            helper.debug_print("Parsed Request Body: {}".format(body))
+            helper.debug_print(f"Parsed Request Body: {body}")
         elif isinstance(body, dict):
-            helper.debug_print("Parsed Request Body: {}".format(body))
+            helper.debug_print(f"Parsed Request Body: {body}")
         else:
             body = {}
         blog_url = body.get("blog_url")
