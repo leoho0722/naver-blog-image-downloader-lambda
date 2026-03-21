@@ -129,16 +129,22 @@ jobs:
             --arg prompt "$PROMPT" \
             '{model: $model, messages: [{role: "user", content: $prompt}]}')
 
-          RESPONSE=$(curl -s "https://models.github.ai/inference/chat/completions" \
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" "https://models.github.ai/inference/chat/completions" \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$BODY")
 
-          echo "$RESPONSE" | jq -r '.choices[0].message.content' > /tmp/release_notes.md
+          HTTP_STATUS=$(echo "$RESPONSE" | tail -1 | sed 's/HTTP_STATUS://')
+          RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "API HTTP Status: $HTTP_STATUS"
+          echo "API Response: $RESPONSE_BODY"
+
+          echo "$RESPONSE_BODY" | jq -r '.choices[0].message.content' > /tmp/release_notes.md
 
           # 若 AI 生成失敗，使用 commit 記錄作為 fallback
           if [ ! -s /tmp/release_notes.md ] || grep -q "^null$" /tmp/release_notes.md; then
-            echo "⚠️ AI 生成失敗，使用 commit 記錄作為 Release Notes"
+            echo "⚠️ AI 生成失敗 (HTTP $HTTP_STATUS)，使用 commit 記錄作為 Release Notes"
             {
               echo "## 變更記錄"
               echo ""
