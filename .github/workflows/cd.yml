@@ -1,8 +1,10 @@
 name: CD
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
     branches: [main]
+    types: [completed]
 
 permissions:
   contents: write
@@ -16,6 +18,7 @@ env:
 jobs:
   deploy:
     name: Build & Deploy to AWS Lambda
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
