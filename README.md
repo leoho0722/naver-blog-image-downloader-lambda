@@ -18,19 +18,19 @@
 
 ```text
 .
-├── app.py                  # Lambda 入口點，路由 submit/status/async worker
-├── data_models.py          # JobStatus enum、DownloadResult dataclass
-├── job_store.py            # S3 任務狀態管理（create/get/update job）
-├── helper.py               # 輔助函數（時間計算、除錯輸出）
-├── response_builder.py     # HTTP Response Builder
-├── requirements.txt        # Python 依賴套件（playwright、boto3、awslambdaric）
-├── Dockerfile              # 容器映像定義（基於 playwright:v1.55.0-jammy）
-├── Makefile                # 部署相關指令
-├── pyproject.toml          # Ruff linter 設定
-├── .env                    # 環境變數設定檔（需自行建立）
-└── scripts/
-    ├── deploy-image.sh     # 建構並上傳 Docker 映像至 ECR
-    ├── update-function.sh  # 更新 Lambda 函數程式碼與設定
+├── app.py                      # Lambda 入口點，路由 submit/status/async worker
+├── data_models.py              # JobStatus enum、DownloadResult dataclass
+├── job_store.py                # S3 任務狀態管理（create/get/update job）
+├── helper.py                   # 輔助函數（時間計算、除錯輸出）
+├── response_builder.py         # HTTP Response Builder
+├── requirements.txt            # Python 依賴套件（playwright、boto3、awslambdaric）
+├── Dockerfile                  # 容器映像定義（基於 playwright:v1.55.0-jammy）
+├── Makefile                    # 部署相關指令
+├── pyproject.toml              # Ruff linter 設定
+├── .env                        # 環境變數設定檔（需自行建立）
+└── scripts/    
+    ├── deploy-image.sh         # 建構並上傳 Docker 映像至 ECR
+    ├── update-function.sh      # 更新 Lambda 函數程式碼與設定
     └── setup-aws-resources.sh  # 首次 AWS 資源初始化（S3、IAM、Lambda）
 ```
 

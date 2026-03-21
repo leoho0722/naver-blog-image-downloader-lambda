@@ -2,34 +2,36 @@
 
 [繁體中文](README_zh-TW.md)
 
-This is a service deployed on AWS Lambda that extracts high-quality image URLs from Naver Blog articles.
+This is a service deployed on AWS Lambda that extracts high-quality image URLs from Naver Blog articles. It uses an **async + polling** architecture to avoid the API Gateway 29-second timeout issue.
 
 ## Features
 
 This service uses Playwright to automate browser operations and extract images from Naver Blog articles:
 
-1. Receives a Naver Blog article URL
-2. Visits the URL using a Chromium browser
+1. Submit a download request and immediately receive a `job_id` (HTTP 202)
+2. Lambda processes the article in the background using a Chromium browser
 3. Automatically handles mobile and desktop version switching
-4. Locates all images in the article
-5. Clicks on each image to open a popup and retrieves the original image URL
-6. Returns a list of all image URLs and processing results
+4. Locates all images in the article and clicks each one to retrieve original image URLs
+5. Results are stored in S3 and can be queried via a polling API
 
 ## Project Structure
 
 ```text
 .
-├── app.py                  # Lambda function main program with image download logic
-├── data_models.py          # Data model definitions (DownloadResult)
-├── helper.py               # Helper functions (time calculation, debug output)
-├── response_builder.py     # HTTP Response Builder
-├── requirements.txt        # Python dependencies
-├── Dockerfile              # Dockerfile
-├── Makefile                # Deployment commands
-├── .env                    # Environment variables configuration file (needs to be created)
-└── scripts/
-    ├── deploy-image.sh     # Build and upload Docker image to ECR
-    └── update-function.sh  # Update Lambda function
+├── app.py                      # Lambda entry point, routes submit/status/async worker
+├── data_models.py              # JobStatus enum, DownloadResult dataclass
+├── job_store.py                # S3 job state management (create/get/update job)
+├── helper.py                   # Helper functions (time calculation, debug output)
+├── response_builder.py         # HTTP Response Builder
+├── requirements.txt            # Python dependencies (playwright, boto3, awslambdaric)
+├── Dockerfile                  # Container image definition (based on playwright:v1.55.0-jammy)
+├── Makefile                    # Deployment commands
+├── pyproject.toml              # Ruff linter configuration
+├── .env                        # Environment variables configuration file (needs to be created)
+└── scripts/    
+    ├── deploy-image.sh         # Build and upload Docker image to ECR
+    ├── update-function.sh      # Update Lambda function code and configuration
+    └── setup-aws-resources.sh  # First-time AWS resource initialization (S3, IAM, Lambda)
 ```
 
 ## Environment Variables Configuration
@@ -47,6 +49,9 @@ AWS_ECR_REPOSITORY_URI=your_account_id.dkr.ecr.your_aws_region.amazonaws.com
 
 # Lambda Function Configuration
 AWS_LAMBDA_FUNCTION_NAME=your_lambda_function_name
+
+# S3 Configuration (async job storage)
+S3_BUCKET_NAME=your_s3_bucket_name
 
 # Docker Image Configuration
 IMAGE_NAME=your_lambda_container_image_name
@@ -66,6 +71,7 @@ DEBUG_MODE=true
 - AWS CLI
 - AWS ECR Repository (needs to be created manually)
 - AWS Lambda Function (must use container image type)
+- AWS S3 Bucket (stores async job state, can be created automatically via `scripts/setup-aws-resources.sh`)
 
 ### 1. Build and Upload Docker Image
 
@@ -102,31 +108,49 @@ This command will execute `deploy-image` and `update-function` sequentially.
 
 ## API Usage
 
-### Request Format
+### 1. Submit a Download Request
 
 ```json
 {
+  "action": "download",
   "blog_url": "https://blog.naver.com/username/post_id"
 }
 ```
 
-Or via API Gateway:
+Response (HTTP 202):
 
 ```json
 {
-  "body": "{\"blog_url\": \"https://blog.naver.com/username/post_id\"}"
+  "job_id": "uuid-string",
+  "status": "processing"
 }
 ```
 
-### Response Format
+### 2. Query Job Status
 
 ```json
 {
-  "status_code": 200,
-  "headers": {
-    "Content-Type": "application/json"
-  },
-  "body": {
+  "action": "status",
+  "job_id": "uuid-string"
+}
+```
+
+Response (processing, HTTP 200):
+
+```json
+{
+  "job_id": "uuid-string",
+  "status": "processing"
+}
+```
+
+Response (completed, HTTP 200):
+
+```json
+{
+  "job_id": "uuid-string",
+  "status": "completed",
+  "result": {
     "total_images": 10,
     "successful_downloads": 10,
     "failure_downloads": 0,
@@ -142,17 +166,19 @@ Or via API Gateway:
 
 ### Response Fields
 
-- `total_images`: Total number of images found in the article
-- `successful_downloads`: Number of images with URLs successfully retrieved
-- `failure_downloads`: Number of images that failed to process
-- `image_urls`: List of image URLs
-- `errors`: List of error messages
-- `elapsed_time`: Processing time (in seconds)
+- `job_id`: Job ID (used for polling)
+- `status`: Job status (`processing` / `completed` / `failed`)
+- `result.total_images`: Total number of images found in the article
+- `result.successful_downloads`: Number of images with URLs successfully retrieved
+- `result.failure_downloads`: Number of images that failed to process
+- `result.image_urls`: List of image URLs
+- `result.errors`: List of error messages
+- `result.elapsed_time`: Processing time (in seconds)
 
 ## Lambda Function Configuration Recommendations
 
-- **Memory**: Recommended 2048 MB or higher
-- **Timeout**: Recommended 60 seconds or higher
+- **Memory**: 2048 MB
+- **Timeout**: 120 seconds
 - **Ephemeral storage**: Recommended 512 MB or higher
 - **Runtime**: Container Image
 
@@ -161,4 +187,4 @@ Or via API Gateway:
 1. This service only extracts image URLs and does not actually download image files
 2. Uses a Chromium browser for web operations, which consumes more memory
 3. Processing time depends on the number of images in the article
-4. It is recommended to set an appropriate timeout for the Lambda function to avoid execution timeouts
+4. Job records in S3 are automatically expired and cleaned up after 1 day
