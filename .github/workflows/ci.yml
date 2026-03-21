@@ -40,7 +40,7 @@ jobs:
       - name: Auto-fix lint & formatting
         if: steps.lint_check.outcome == 'failure' || steps.format_check.outcome == 'failure'
         run: |
-          ruff check . --fix
+          ruff check . --fix --unsafe-fixes
           ruff format .
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
