@@ -1,10 +1,12 @@
 import json
 
+import boto3
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 import helper
-from data_models import DownloadResult
+import job_store
+from data_models import DownloadResult, JobStatus
 from response_builder import build_response
 
 
@@ -210,48 +212,117 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
         return DownloadResult(0, 0, 0, [], [str(e)], elapsed)
 
 
-def lambda_handler(event, context):
-    request_start_time = helper.get_current_time()
-
-    helper.debug_print(f"Event: {event}")
-
-    # 從 event 中取得 Naver Blog URL
-    blog_url = None
-
-    # 1. 解析 event 內容
-    # 如果 event 是字串，嘗試將其解析為 JSON
+def _parse_request_body(event) -> dict:
+    """解析 API Gateway 或直接呼叫的 event，回傳 body dict"""
     if isinstance(event, str):
         event = json.loads(event or "{}")
-        helper.debug_print(f"Raw Request Body: {event}")
 
-    # 如果 event 是字典，直接使用
-    if isinstance(event, dict):
-        helper.debug_print(f"Raw Request Body: {event}")
+    if not isinstance(event, dict):
+        return {}
 
-    # 2. 判斷 event 結構中是否有 body，還是直接包含參數
+    helper.debug_print(f"Raw Event: {event}")
+
     if "body" in event:
         body = event["body"]
         if isinstance(body, str):
             body = json.loads(body or "{}")
-            helper.debug_print(f"Parsed Request Body: {body}")
-        elif isinstance(body, dict):
-            helper.debug_print(f"Parsed Request Body: {body}")
-        else:
+        elif not isinstance(body, dict):
             body = {}
-        blog_url = body.get("blog_url")
-    else:
-        blog_url = event.get("blog_url")
+        helper.debug_print(f"Parsed Request Body: {body}")
+        return body
 
+    return event
+
+
+def _handle_submit(body, context):
+    """建立任務 → 非同步呼叫 worker → 回傳 job_id"""
+    blog_url = body.get("blog_url")
     if not blog_url:
-        elapsed = helper.calculate_elapsed_time(request_start_time)
-        result = DownloadResult(0, 0, 0, [], ["缺少 blog_url 參數"], elapsed)
-        return build_response(400, result.to_dict())
+        response = build_response(400, {"error": "缺少 blog_url 參數"})
+        helper.debug_print(f"Response: {response}")
+        return response
 
-    result = download_images_from_naver_blog(blog_url)
+    job_id = job_store.create_job(blog_url)
+    helper.debug_print(f"已建立任務: {job_id}，準備非同步呼叫 worker")
 
-    # 更新總花費時間（包含請求解析時間）
-    total_elapsed = helper.calculate_elapsed_time(request_start_time)
-    result.elapsed_time = total_elapsed
+    # 非同步呼叫自身處理
+    boto3.client("lambda").invoke(
+        FunctionName=context.function_name,
+        InvocationType="Event",
+        Payload=json.dumps(
+            {
+                "_async_worker": True,
+                "job_id": job_id,
+                "blog_url": blog_url,
+            }
+        ),
+    )
 
-    status = 200 if result.image_urls else 500
-    return build_response(status, result.to_dict())
+    response = build_response(202, {"job_id": job_id, "status": JobStatus.PROCESSING})
+    helper.debug_print(f"Response: {response}")
+    return response
+
+
+def _handle_status(body):
+    """查詢任務狀態"""
+    job_id = body.get("job_id")
+    if not job_id:
+        response = build_response(400, {"error": "缺少 job_id 參數"})
+        helper.debug_print(f"Response: {response}")
+        return response
+
+    job = job_store.get_job(job_id)
+    if not job:
+        response = build_response(404, {"error": "任務不存在"})
+        helper.debug_print(f"Response: {response}")
+        return response
+
+    response_body = {"job_id": job_id, "status": job["status"]}
+    if job.get("result"):
+        response_body["result"] = job["result"]
+    response = build_response(200, response_body)
+    helper.debug_print(f"Response: {response}")
+    return response
+
+
+def _handle_async_worker(event):
+    """背景 worker：執行 Playwright 爬取，結果寫入 S3"""
+    job_id = event["job_id"]
+    blog_url = event["blog_url"]
+    helper.debug_print(f"Worker 開始處理任務: {job_id}，URL: {blog_url}")
+
+    try:
+        result = download_images_from_naver_blog(blog_url)
+        if result.image_urls:
+            status = JobStatus.COMPLETED
+        elif result.errors:
+            status = JobStatus.FAILED
+        else:
+            status = JobStatus.COMPLETED  # 沒有圖片也沒有錯誤（例如文章本身無圖）
+        job_store.update_job(job_id, status, result.to_dict())
+        helper.debug_print(f"任務 {job_id} 狀態: {status}，找到 {result.successful_downloads} 張圖片")
+    except Exception as e:
+        helper.debug_print(f"任務 {job_id} 處理失敗: {e}")
+        job_store.update_job(job_id, JobStatus.FAILED, {"error": str(e)})
+
+
+def lambda_handler(event, context):
+    helper.debug_print(f"Event: {event}")
+
+    # 1. 非同步 worker 模式（被自己 async invoke）
+    if isinstance(event, dict) and "_async_worker" in event:
+        _handle_async_worker(event)
+        return
+
+    # 2. 解析 API Gateway 請求
+    body = _parse_request_body(event)
+    action = body.get("action", "download")  # 向後相容：沒有 action 就當 download
+
+    if action == "download":
+        return _handle_submit(body, context)
+    elif action == "status":
+        return _handle_status(body)
+    else:
+        response = build_response(400, {"error": f"未知的 action: {action}"})
+        helper.debug_print(f"Response: {response}")
+        return response

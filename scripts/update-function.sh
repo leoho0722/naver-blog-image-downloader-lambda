@@ -91,15 +91,53 @@ if [ $? -eq 0 ]; then
         --no-cli-pager
     
     if [ $? -eq 0 ]; then
-        echo "Lambda function update completed. Verifying final status..."
-        
+        echo "Lambda function update completed."
+
+        # 更新 Lambda 配置（記憶體、超時、環境變數）
+        echo "Updating Lambda function configuration..."
+
+        S3_BUCKET_NAME="${S3_BUCKET_NAME:-naver-blog-download-jobs}"
+
+        # 取得現有環境變數並合併 S3_BUCKET_NAME
+        EXISTING_ENV=$(aws lambda get-function-configuration \
+            --function-name $AWS_LAMBDA_FUNCTION_NAME \
+            --query 'Environment.Variables' \
+            --output json \
+            --no-cli-pager 2>/dev/null || echo '{}')
+
+        NEW_ENV=$(echo "$EXISTING_ENV" | python3 -c "
+import sys, json
+env = json.load(sys.stdin) or {}
+env['S3_BUCKET_NAME'] = '${S3_BUCKET_NAME}'
+print(json.dumps({'Variables': env}))
+")
+
+        aws lambda update-function-configuration \
+            --function-name $AWS_LAMBDA_FUNCTION_NAME \
+            --memory-size 2048 \
+            --timeout 120 \
+            --environment "$NEW_ENV" \
+            --no-cli-pager \
+            --output json > /dev/null
+
+        if [ $? -eq 0 ]; then
+            echo "Lambda configuration update initiated. Waiting for update to complete..."
+            aws lambda wait function-updated \
+                --function-name $AWS_LAMBDA_FUNCTION_NAME \
+                --no-cli-pager
+        else
+            echo "Warning: Failed to update Lambda configuration"
+        fi
+
+        echo "Verifying final status..."
+
         # 只顯示關鍵資訊
         aws lambda get-function \
             --function-name $AWS_LAMBDA_FUNCTION_NAME \
             --no-cli-pager \
             --output table \
-            --query 'Configuration.{FunctionName: FunctionName, Runtime: PackageType, CodeSize: CodeSize, LastModified: LastModified, State: State, LastUpdateStatus: LastUpdateStatus}'
-        
+            --query 'Configuration.{FunctionName: FunctionName, Runtime: PackageType, MemorySize: MemorySize, Timeout: Timeout, CodeSize: CodeSize, LastModified: LastModified, State: State, LastUpdateStatus: LastUpdateStatus}'
+
         echo "Successfully updated Lambda function."
     else
         echo "Error: Lambda function update timed out or failed"

@@ -1,5 +1,14 @@
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any
+
+
+class JobStatus(str, Enum):
+    """非同步任務狀態"""
+
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 @dataclass

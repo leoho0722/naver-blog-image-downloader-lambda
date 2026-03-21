@@ -69,6 +69,36 @@ jobs:
             --function-name ${{ secrets.AWS_LAMBDA_FUNCTION_NAME }} \
             --no-cli-pager
 
+      - name: Update Lambda function configuration
+        run: |
+          # 取得現有環境變數並合併 S3_BUCKET_NAME
+          EXISTING_ENV=$(aws lambda get-function-configuration \
+            --function-name ${{ secrets.AWS_LAMBDA_FUNCTION_NAME }} \
+            --query 'Environment.Variables' \
+            --output json \
+            --no-cli-pager 2>/dev/null || echo '{}')
+
+          NEW_ENV=$(echo "$EXISTING_ENV" | python3 -c "
+          import sys, json
+          env = json.load(sys.stdin) or {}
+          env['S3_BUCKET_NAME'] = '${{ secrets.S3_BUCKET_NAME }}'
+          print(json.dumps({'Variables': env}))
+          ")
+
+          aws lambda update-function-configuration \
+            --function-name ${{ secrets.AWS_LAMBDA_FUNCTION_NAME }} \
+            --memory-size 2048 \
+            --timeout 120 \
+            --environment "$NEW_ENV" \
+            --no-cli-pager \
+            --output json
+
+      - name: Wait for Lambda configuration update
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ secrets.AWS_LAMBDA_FUNCTION_NAME }} \
+            --no-cli-pager
+
       - name: Verify Lambda function status
         run: |
           aws lambda get-function \
