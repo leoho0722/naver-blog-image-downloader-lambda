@@ -1,0 +1,156 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  models: read
+
+env:
+  IMAGE_NAME: naver-blog-image-downloader-lambda
+  IMAGE_ARCH: linux/amd64
+  DOCKERFILE_PATH: ./Dockerfile
+
+jobs:
+  deploy:
+    name: Build & Deploy to AWS Lambda
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate image tag
+        id: image_tag
+        run: echo "tag=$(date +'%y%m%d').${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --no-cache \
+            --platform ${{ env.IMAGE_ARCH }} \
+            -t ${{ env.IMAGE_NAME }}:${{ steps.image_tag.outputs.tag }} \
+            -f ${{ env.DOCKERFILE_PATH }} \
+            .
+
+      - name: Tag and push image to ECR
+        run: |
+          IMAGE_URI=${{ secrets.AWS_ECR_REPOSITORY_URI }}/${{ env.IMAGE_NAME }}:${{ steps.image_tag.outputs.tag }}
+          docker tag ${{ env.IMAGE_NAME }}:${{ steps.image_tag.outputs.tag }} ${IMAGE_URI}
+          docker push ${IMAGE_URI}
+
+      - name: Update Lambda function code
+        run: |
+          IMAGE_URI=${{ secrets.AWS_ECR_REPOSITORY_URI }}/${{ env.IMAGE_NAME }}:${{ steps.image_tag.outputs.tag }}
+          aws lambda update-function-code \
+            --function-name ${{ secrets.AWS_LAMBDA_FUNCTION_NAME }} \
+            --image-uri ${IMAGE_URI} \
+            --no-cli-pager \
+            --output json
+
+      - name: Wait for Lambda function update
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ secrets.AWS_LAMBDA_FUNCTION_NAME }} \
+            --no-cli-pager
+
+      - name: Verify Lambda function status
+        run: |
+          aws lambda get-function \
+            --function-name ${{ secrets.AWS_LAMBDA_FUNCTION_NAME }} \
+            --no-cli-pager \
+            --output table \
+            --query 'Configuration.{FunctionName: FunctionName, PackageType: PackageType, CodeSize: CodeSize, LastModified: LastModified, State: State, LastUpdateStatus: LastUpdateStatus}'
+
+      - name: Create git tag
+        run: |
+          TAG="v${{ steps.image_tag.outputs.tag }}"
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Get commits since last tag
+        id: changelog
+        run: |
+          TAG="v${{ steps.image_tag.outputs.tag }}"
+          PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG}$" | head -n 1 || echo "")
+          if [ -z "$PREVIOUS_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"- %s (%h)")
+          else
+            COMMITS=$(git log --pretty=format:"- %s (%h)" "${PREVIOUS_TAG}..HEAD")
+          fi
+          echo "$COMMITS" > /tmp/commits.txt
+          cat /tmp/commits.txt
+
+      - name: Generate release notes with GitHub Copilot (Claude Sonnet 4.6)
+        id: release_notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          COMMITS=$(cat /tmp/commits.txt)
+          TAG="v${{ steps.image_tag.outputs.tag }}"
+
+          PROMPT=$(cat <<'PROMPT_EOF'
+          你是一位專業的軟體發布管理員。請根據以下 Git commit 記錄，撰寫正體中文的 Release Notes。
+
+          版本號：__TAG__
+
+          Commit 記錄：
+          __COMMITS__
+
+          要求：
+          1. 使用正體中文撰寫
+          2. 按類別分組（如有）：✨ 新功能、🐛 錯誤修正、📈 改進與優化、🔄 重構、🔧 維護
+          3. 每項用 bullet point 列出
+          4. 簡潔專業
+          5. 直接輸出 Markdown 內容，不要加前綴或後綴說明
+          PROMPT_EOF
+          )
+          PROMPT="${PROMPT/__TAG__/$TAG}"
+          PROMPT="${PROMPT/__COMMITS__/$COMMITS}"
+
+          BODY=$(jq -n \
+            --arg model "claude-sonnet-4-6" \
+            --arg prompt "$PROMPT" \
+            '{model: $model, messages: [{role: "user", content: $prompt}]}')
+
+          RESPONSE=$(curl -s "https://models.github.ai/inference/chat/completions" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$BODY")
+
+          echo "$RESPONSE" | jq -r '.choices[0].message.content' > /tmp/release_notes.md
+
+          # 若 AI 生成失敗，使用 commit 記錄作為 fallback
+          if [ ! -s /tmp/release_notes.md ] || grep -q "^null$" /tmp/release_notes.md; then
+            echo "⚠️ AI 生成失敗，使用 commit 記錄作為 Release Notes"
+            {
+              echo "## 變更記錄"
+              echo ""
+              cat /tmp/commits.txt
+            } > /tmp/release_notes.md
+          fi
+
+          echo "--- Generated Release Notes ---"
+          cat /tmp/release_notes.md
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.image_tag.outputs.tag }}"
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file /tmp/release_notes.md
