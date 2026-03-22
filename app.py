@@ -167,16 +167,16 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
             except PlaywrightTimeoutError:
                 errors.append("等待圖片元素超時")
                 elapsed = helper.calculate_elapsed_time(start_time)
-                return DownloadResult(0, 0, 1, [], errors, elapsed)
+                return DownloadResult(0, 0, 0, [], errors, elapsed)
             except Exception as e:
                 error_msg = str(e)
                 elapsed = helper.calculate_elapsed_time(start_time)
                 if "closed" in error_msg.lower():
                     errors.append(f"瀏覽器/頁面被關閉: {error_msg}")
-                    return DownloadResult(0, 0, 1, [], errors, elapsed)
+                    return DownloadResult(0, 0, 0, [], errors, elapsed)
                 else:
                     errors.append(f"載入圖片時發生錯誤: {error_msg}")
-                    return DownloadResult(0, 0, 1, [], errors, elapsed)
+                    return DownloadResult(0, 0, 0, [], errors, elapsed)
 
             # 額外等待確保所有圖片都載入
             page.wait_for_timeout(500)

@@ -20,5 +20,5 @@ def build_response(status_code: int, body: dict[str, Any]) -> dict[str, Any]:
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
         },
-        "body": json.dumps(body),
+        "body": json.dumps(body, ensure_ascii=False),
     }

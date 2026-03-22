@@ -53,7 +53,7 @@ class BaseStore(ABC):
         self._s3.put_object(
             Bucket=self._bucket,
             Key=self._build_key(job_id),
-            Body=json.dumps(data),
+            Body=json.dumps(data, ensure_ascii=False),
             ContentType="application/json",
         )
 
