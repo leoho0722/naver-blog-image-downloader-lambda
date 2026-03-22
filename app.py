@@ -390,7 +390,8 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
                     collected_numbers.add(int(m.group(1)))
 
             if collected_numbers:
-                max_num = max(collected_numbers)
+                # 取 max(已收集最大序號, 頁面元素數量)，確保尾端遺漏也能偵測
+                max_num = max(max(collected_numbers), len(img_elements))
                 expected = set(range(1, max_num + 1))
                 missing = sorted(expected - collected_numbers)
             else:
@@ -398,77 +399,59 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
 
             if missing:
                 helper.debug_print(f"序號完整性驗證：缺漏序號 {missing}")
-                for num in missing:
-                    target_idx = num - 1
-                    if target_idx >= len(img_elements):
-                        helper.debug_print(f"序號 {num}：對應索引 {target_idx} 超出元素範圍，跳過")
-                        continue
 
-                    try:
-                        elem = img_elements[target_idx]
-                        if not elem.is_visible():
-                            helper.debug_print(f"序號 {num}：元素不可見，跳過")
-                            continue
+                # 開啟彈窗：點擊最後一個可見元素，透過 carousel 導航
+                try:
+                    last_elem = img_elements[-1]
+                    last_elem.scroll_into_view_if_needed()
+                    page.wait_for_timeout(300)
+                    last_elem.click()
+                    page.wait_for_timeout(1000)
 
-                        # 滾動到元素並點擊，給予較長等待
-                        elem.scroll_into_view_if_needed()
+                    popup_img = None
+                    for _attempt in range(12):
+                        popup_img_el = frame.query_selector("div.cpv__img_wrap img.cpv__img")
+                        if popup_img_el:
+                            popup_img = popup_img_el
+                            break
                         page.wait_for_timeout(300)
-                        elem.click()
-                        page.wait_for_timeout(1000)
 
-                        popup_img = None
-                        for _attempt in range(12):
-                            popup_img_el = frame.query_selector("div.cpv__img_wrap img.cpv__img")
-                            if popup_img_el:
-                                popup_img = popup_img_el
-                                break
-                            page.wait_for_timeout(300)
+                    if popup_img:
+                        for num in sorted(missing):
+                            expected_pattern = f"_{num}."
+                            found = False
+                            # 用方向鍵導航，最多按 max_num 次（繞一圈）
+                            for _nav in range(max_num):
+                                img_url = popup_img.get_attribute("src")
+                                if img_url and expected_pattern in img_url:
+                                    img_urls.append(img_url)
+                                    found = True
+                                    helper.debug_print(f"序號 {num} 補回成功（carousel 導航）：{img_url}")
+                                    break
+                                page.keyboard.press("ArrowRight")
+                                page.wait_for_timeout(500)
+                                popup_img_el = frame.query_selector("div.cpv__img_wrap img.cpv__img")
+                                if popup_img_el:
+                                    popup_img = popup_img_el
 
-                        if not popup_img:
-                            helper.debug_print(f"序號 {num}：未找到彈窗")
-                            try:
-                                page.keyboard.press("Escape")
-                                _wait_popup_closed(frame, page)
-                            except Exception:
-                                pass
-                            continue
+                            if not found:
+                                helper.debug_print(f"序號 {num} 補回失敗：carousel 導航未找到")
+                                errors.append(f"序號 {num} 圖片無法成功擷取")
+                    else:
+                        helper.debug_print("序號補回：無法開啟彈窗")
 
-                        img_url = popup_img.get_attribute("src")
+                    page.keyboard.press("Escape")
+                    _wait_popup_closed(frame, page)
 
-                        # 等待 URL 更新為包含正確序號的圖片
-                        expected_pattern = f"_{num}."
-                        for _wait in range(15):
-                            if img_url and expected_pattern in img_url:
-                                break
-                            page.wait_for_timeout(300)
-                            popup_img_el = frame.query_selector("div.cpv__img_wrap img.cpv__img")
-                            if popup_img_el:
-                                popup_img = popup_img_el
-                            img_url = popup_img.get_attribute("src")
-
-                        if img_url and img_url.startswith("http") and expected_pattern in img_url:
-                            img_urls.append(img_url)
-                            helper.debug_print(f"序號 {num} 補回成功：{img_url}")
-                        else:
-                            helper.debug_print(
-                                f"序號 {num} 補回失敗：URL 不匹配 (期望含 {expected_pattern}，實際: {img_url})"
-                            )
-                            errors.append(f"序號 {num} 圖片無法成功擷取")
-
+                except Exception as e:
+                    error_msg = str(e)
+                    if "closed" not in error_msg.lower():
+                        helper.debug_print(f"序號補回錯誤: {error_msg}")
+                    try:
                         page.keyboard.press("Escape")
                         _wait_popup_closed(frame, page)
-
-                    except Exception as e:
-                        error_msg = str(e)
-                        if "closed" in error_msg.lower():
-                            helper.debug_print(f"序號 {num} 補回時瀏覽器被關閉")
-                            break
-                        helper.debug_print(f"序號 {num} 補回錯誤: {error_msg}")
-                        try:
-                            page.keyboard.press("Escape")
-                            _wait_popup_closed(frame, page)
-                        except Exception:
-                            pass
+                    except Exception:
+                        pass
 
                 # 有新增圖片，重新去重 + 排序
                 img_urls = _dedup_urls(img_urls)
@@ -478,11 +461,24 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
 
             browser.close()
 
+        # 根據最終序號缺漏計算實際失敗數量
+        final_numbers = set()
+        for url in img_urls:
+            m = re.search(r"_(\d+)\.(jpg|jpeg|png|gif)", url)
+            if m:
+                final_numbers.add(int(m.group(1)))
+        if final_numbers:
+            expected_total = max(max(final_numbers), len(img_elements))
+            actual_failures = len(set(range(1, expected_total + 1)) - final_numbers)
+        else:
+            expected_total = len(img_elements)
+            actual_failures = expected_total
+
         elapsed = helper.calculate_elapsed_time(start_time)
         return DownloadResult(
-            total_images=len(img_elements),
+            total_images=expected_total,
             successful_downloads=len(img_urls),
-            failure_downloads=len(errors),
+            failure_downloads=actual_failures,
             image_urls=img_urls,
             errors=errors,
             elapsed_time=elapsed,
