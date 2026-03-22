@@ -169,7 +169,7 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
                     img_urls.append(img_url)
                     previous_url = img_url
                     index_to_url[idx] = img_url
-                    helper.debug_print(f"第 {idx + 1} 張圖片 URL: {img_url[:80]}...")
+                    helper.debug_print(f"第 {idx + 1} 張圖片 URL: {img_url}")
 
                     # Layer 1：關閉彈窗並主動驗證已關閉
                     page.keyboard.press("Escape")
@@ -283,6 +283,10 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
 
         # === 去重：移除重複的 URL ===
         if img_urls:
+            helper.debug_print(f"去重前共 {len(img_urls)} 筆 URL：")
+            for i, url in enumerate(img_urls):
+                helper.debug_print(f"  [{i + 1}] {url}")
+
             seen = set()
             unique_urls = []
             duplicate_urls = []
@@ -299,6 +303,10 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
                 for dup_url in duplicate_urls:
                     helper.debug_print(f"去重移除: {dup_url}")
             img_urls = unique_urls
+
+            helper.debug_print(f"去重後共 {len(img_urls)} 筆 URL：")
+            for i, url in enumerate(img_urls):
+                helper.debug_print(f"  [{i + 1}] {url}")
 
         # 修正順序：根據檔名編號排序
         if len(img_urls) > 1:
