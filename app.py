@@ -254,7 +254,7 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
 
                         if img_url and img_url.startswith("http") and img_url != stale_url:
                             index_to_url[retry_idx] = img_url
-                            helper.debug_print(f"重試成功：第 {retry_idx + 1} 張圖片 URL: {img_url[:80]}...")
+                            helper.debug_print(f"重試成功：第 {retry_idx + 1} 張圖片 URL: {img_url}")
                         else:
                             helper.debug_print(f"重試失敗：第 {retry_idx + 1} 張圖片仍為相同或無效 URL")
 
