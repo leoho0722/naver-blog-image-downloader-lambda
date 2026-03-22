@@ -417,17 +417,33 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
                         page.wait_for_timeout(300)
 
                     if popup_img:
+                        # 記錄初始 URL，用於偵測繞回
+                        initial_url = popup_img.get_attribute("src")
+                        helper.debug_print(f"carousel 起始位置：{initial_url}")
+
                         for num in sorted(missing):
                             expected_pattern = f"_{num}."
                             found = False
-                            # 用方向鍵導航，最多按 max_num 次（繞一圈）
-                            for _nav in range(max_num):
+                            seen_in_nav = set()
+
+                            # 無限導航直到找到目標或偵測到繞回
+                            while True:
                                 img_url = popup_img.get_attribute("src")
+
                                 if img_url and expected_pattern in img_url:
                                     img_urls.append(img_url)
                                     found = True
                                     helper.debug_print(f"序號 {num} 補回成功（carousel 導航）：{img_url}")
                                     break
+
+                                # 偵測繞回：如果已經看過這個 URL，代表已繞一圈
+                                if img_url in seen_in_nav:
+                                    helper.debug_print(f"序號 {num}：carousel 已繞回，停止導航")
+                                    break
+                                seen_in_nav.add(img_url)
+
+                                helper.debug_print(f"序號 {num} 導航中，當前: {img_url}")
+
                                 page.keyboard.press("ArrowRight")
                                 page.wait_for_timeout(500)
                                 popup_img_el = frame.query_selector("div.cpv__img_wrap img.cpv__img")
