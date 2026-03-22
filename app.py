@@ -152,6 +152,14 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
                                 popup_img = popup_img_el
                             img_url = popup_img.get_attribute("src")
 
+                    # Phase B 失敗：stale src 始終未更新，跳過讓 Layer 3 重試
+                    if previous_url is not None and img_url == previous_url:
+                        errors.append(f"第{idx + 1}張圖片彈窗 src 始終未更新")
+                        helper.debug_print(f"第 {idx + 1} 張圖片 Phase B 失敗，將由 Layer 3 重試")
+                        page.keyboard.press("Escape")
+                        _wait_popup_closed(frame, page)
+                        continue
+
                     if not img_url or not img_url.startswith("http"):
                         errors.append(f"第{idx + 1}張圖片無效連結: {img_url}")
                         page.keyboard.press("Escape")
@@ -277,16 +285,19 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
         if img_urls:
             seen = set()
             unique_urls = []
+            duplicate_urls = []
             for url in img_urls:
                 if url not in seen:
                     seen.add(url)
                     unique_urls.append(url)
-            if len(unique_urls) < len(img_urls):
+                else:
+                    duplicate_urls.append(url)
+            if duplicate_urls:
                 helper.debug_print(
-                    f"去重：從 {len(img_urls)} 筆移除 "
-                    f"{len(img_urls) - len(unique_urls)} 筆重複，"
-                    f"剩餘 {len(unique_urls)} 筆"
+                    f"去重：從 {len(img_urls)} 筆移除 {len(duplicate_urls)} 筆重複，剩餘 {len(unique_urls)} 筆"
                 )
+                for dup_url in duplicate_urls:
+                    helper.debug_print(f"去重移除: {dup_url}")
             img_urls = unique_urls
 
         # 修正順序：根據檔名編號排序
@@ -304,16 +315,9 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
 
                 helper.debug_print(f"提取到的編號: {[num for num, _ in url_with_numbers[:10]]}")
 
-                # 檢查是否需要排序(前幾張編號是否已經是遞增的)
-                check_count = min(5, len(url_with_numbers))
-                first_few_numbers = [num for num, _ in url_with_numbers[:check_count]]
-
-                # 檢查前幾張是否已經排序好
-                is_sorted = all(
-                    first_few_numbers[i] <= first_few_numbers[i + 1]
-                    for i in range(len(first_few_numbers) - 1)
-                    if first_few_numbers[i] != float("inf") and first_few_numbers[i + 1] != float("inf")
-                )
+                # 檢查全部編號是否已經是遞增的
+                all_numbers = [num for num, _ in url_with_numbers if num != float("inf")]
+                is_sorted = all(all_numbers[i] <= all_numbers[i + 1] for i in range(len(all_numbers) - 1))
 
                 if not is_sorted:
                     # 按編號排序
