@@ -313,7 +313,7 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
                     else:
                         url_with_numbers.append((float("inf"), url))  # 無法提取編號的放最後
 
-                helper.debug_print(f"提取到的編號: {[num for num, _ in url_with_numbers[:10]]}")
+                helper.debug_print(f"提取到的編號: {[num for num, _ in url_with_numbers]}")
 
                 # 檢查全部編號是否已經是遞增的
                 all_numbers = [num for num, _ in url_with_numbers if num != float("inf")]
@@ -323,7 +323,7 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
                     # 按編號排序
                     url_with_numbers.sort(key=lambda x: x[0])
                     img_urls = [url for _, url in url_with_numbers]
-                    helper.debug_print(f"圖片順序已修正,排序後前 5 張編號: {[num for num, _ in url_with_numbers[:5]]}")
+                    helper.debug_print(f"圖片順序已修正,排序後編號: {[num for num, _ in url_with_numbers]}")
                 else:
                     helper.debug_print("圖片順序正確,無需調整")
 
@@ -423,6 +423,7 @@ def _handle_async_worker(event):
     """背景 worker：執行 Playwright 爬取，結果寫入 S3"""
     job_id = event["job_id"]
     blog_url = event["blog_url"]
+    helper.clear_logs()
     helper.debug_print(f"Worker 開始處理任務: {job_id}，URL: {blog_url}")
 
     try:
@@ -438,6 +439,8 @@ def _handle_async_worker(event):
     except Exception as e:
         helper.debug_print(f"任務 {job_id} 處理失敗: {e}")
         job_store.update_job(job_id, JobStatus.FAILED, {"error": str(e)})
+    finally:
+        job_store.save_logs(job_id, helper.get_logs())
 
 
 def lambda_handler(event, context):

@@ -1,6 +1,8 @@
 import os
 import time
 
+_logs: list[dict] = []
+
 
 def is_debug_mode() -> bool:
     """判斷是否為 Debug 模式
@@ -13,14 +15,25 @@ def is_debug_mode() -> bool:
 
 
 def debug_print(message: str):
-    """在 Debug 模式下輸出訊息
+    """輸出 debug 訊息並收集到 log list（不受 DEBUG_MODE 控制）
 
     Args:
         message (str): 要輸出的訊息
     """
 
+    _logs.append({"timestamp": time.time(), "message": message})
     if is_debug_mode():
         print(f"[DEBUG] {message}")
+
+
+def get_logs() -> list[dict]:
+    """取得收集的 log list"""
+    return list(_logs)
+
+
+def clear_logs():
+    """清空收集的 log list"""
+    _logs.clear()
 
 
 def get_current_time() -> float:

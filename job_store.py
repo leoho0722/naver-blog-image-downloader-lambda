@@ -50,6 +50,16 @@ def update_job(job_id: str, status: JobStatus, result: dict | None = None):
     )
 
 
+def save_logs(job_id: str, logs: list[dict]):
+    """將 debug log 儲存至 S3"""
+    s3.put_object(
+        Bucket=BUCKET_NAME,
+        Key=f"{PREFIX}{job_id}_logs.json",
+        Body=json.dumps({"job_id": job_id, "logs": logs}),
+        ContentType="application/json",
+    )
+
+
 def get_job(job_id: str) -> dict | None:
     """取得任務狀態"""
     try:
