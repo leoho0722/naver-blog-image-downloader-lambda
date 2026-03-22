@@ -93,29 +93,12 @@ def _sort_urls_by_number(img_urls: list[str]) -> list[str]:
     return img_urls
 
 
-def _wait_popup_closed(frame, page, max_retries=10, interval=200):
-    """按 Escape 後，主動輪詢直到彈窗消失（元素被移除或不可見）
-
-    Args:
-        frame: Playwright Frame 或 Page，用於查詢彈窗元素
-        page: Playwright Page，用於 wait_for_timeout
-        max_retries (int): 最大輪詢次數，預設 10
-        interval (int): 每次輪詢間隔毫秒數，預設 200
-    """
-    for _ in range(max_retries):
-        popup_check = frame.query_selector("div.cpv__img_wrap img.cpv__img")
-        if not popup_check or not popup_check.is_visible():
-            return
-        page.wait_for_timeout(interval)
-
-
 def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
     """從 Naver Blog 文章擷取所有原始圖片 URL
 
-    透過 Playwright Chromium 訪問文章頁面，逐一點擊圖片開啟彈窗，
-    從彈窗中取得原圖 URL。包含三層防禦機制確保完整性：
-    Layer 1 確認彈窗關閉、Layer 2 偵測 stale src、Layer 3 重試遺漏，
-    以及最終的序號完整性驗證。
+    透過 Playwright Chromium 訪問文章頁面，直接從 img 元素的
+    data-lazy-src / src 屬性提取縮圖 URL，將 type 參數替換為
+    w3840 取得最高解析度原圖。去重後按檔名編號排序。
 
     Args:
         blog_url (str): Naver Blog 文章 URL
@@ -205,283 +188,24 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
                 elapsed = helper.calculate_elapsed_time(start_time)
                 return DownloadResult(0, 0, 0, [], ["未找到任何圖片"], elapsed)
 
-            # debug：記錄所有元素的 src 與 data-lazy-src 屬性
-            helper.debug_print("=== 元素屬性 debug ===")
+            # === 直接從元素屬性提取原圖 URL ===
+            # 優先使用 data-lazy-src（已載入的縮圖 URL），否則用 src
+            # 將 type 參數替換為 w3840 取得最高解析度原圖
             for i, elem in enumerate(img_elements):
-                elem_src = elem.get_attribute("src") or "(無)"
-                elem_lazy = elem.get_attribute("data-lazy-src") or "(無)"
-                helper.debug_print(f"  元素[{i}] src={elem_src} | data-lazy-src={elem_lazy}")
-            helper.debug_print("=== 元素屬性 debug 結束 ===")
-
-            previous_url = None  # 追蹤上一張圖片的 URL，用於偵測彈窗未更新
-            index_to_url = {}  # 記錄每個索引成功擷取的 URL
-
-            for idx, img_element in enumerate(img_elements):
-                try:
-                    helper.debug_print(f"處理第 {idx + 1}/{len(img_elements)} 張圖片")
-
-                    # 檢查元素是否還存在
-                    if not img_element.is_visible():
-                        errors.append(f"第{idx + 1}張圖片不可見")
-                        continue
-
-                    # 點擊圖片
-                    img_element.click()
-                    page.wait_for_timeout(300)
-
-                    # Phase A：等待彈窗出現
-                    popup_img = None
-                    for _attempt in range(8):
-                        popup_img_el = frame.query_selector("div.cpv__img_wrap img.cpv__img")
-                        if popup_img_el:
-                            popup_img = popup_img_el
-                            helper.debug_print(f"第 {idx + 1} 張圖片彈窗已出現")
-                            break
-                        page.wait_for_timeout(200)
-
-                    if not popup_img:
-                        errors.append(f"第{idx + 1}張圖片未找到彈窗原圖")
-                        # 嘗試關閉可能存在的彈窗並確認關閉
-                        try:
-                            page.keyboard.press("Escape")
-                            _wait_popup_closed(frame, page)
-                        except Exception:
-                            pass
-                        continue
-
-                    # Phase B：偵測 stale src（彈窗 src 是否仍為上一張圖片）
-                    img_url = popup_img.get_attribute("src")
-                    if previous_url is not None and img_url == previous_url:
-                        for _stale in range(10):
-                            if img_url != previous_url:
-                                break
-                            helper.debug_print(f"第 {idx + 1} 張圖片彈窗 src 尚未更新，重試第 {_stale + 1} 次")
-                            page.wait_for_timeout(200)
-                            popup_img_el = frame.query_selector("div.cpv__img_wrap img.cpv__img")
-                            if popup_img_el:
-                                popup_img = popup_img_el
-                            img_url = popup_img.get_attribute("src")
-
-                    # Phase B 失敗：stale src 始終未更新，跳過讓 Layer 3 重試
-                    if previous_url is not None and img_url == previous_url:
-                        errors.append(f"第{idx + 1}張圖片彈窗 src 始終未更新")
-                        helper.debug_print(f"第 {idx + 1} 張圖片 Phase B 失敗，將由 Layer 3 重試")
-                        page.keyboard.press("Escape")
-                        _wait_popup_closed(frame, page)
-                        continue
-
-                    if not img_url or not img_url.startswith("http"):
-                        errors.append(f"第{idx + 1}張圖片無效連結: {img_url}")
-                        page.keyboard.press("Escape")
-                        _wait_popup_closed(frame, page)
-                        continue
-
-                    img_urls.append(img_url)
-                    previous_url = img_url
-                    index_to_url[idx] = img_url
-                    helper.debug_print(f"第 {idx + 1} 張圖片 URL: {img_url}")
-
-                    # Layer 1：關閉彈窗並主動驗證已關閉
-                    page.keyboard.press("Escape")
-                    _wait_popup_closed(frame, page)
-
-                except Exception as e:
-                    error_msg = str(e)
-                    if "closed" in error_msg.lower():
-                        errors.append(f"第{idx + 1}張圖片處理時瀏覽器被關閉")
-                        break  # 停止處理剩餘圖片
-                    else:
-                        errors.append(f"第{idx + 1}張圖片錯誤: {error_msg}")
-
-                    # 嘗試關閉可能存在的彈窗並確認關閉
-                    try:
-                        page.keyboard.press("Escape")
-                        _wait_popup_closed(frame, page)
-                    except Exception:
-                        pass
+                raw_url = elem.get_attribute("data-lazy-src") or elem.get_attribute("src")
+                if not raw_url or not raw_url.startswith("http"):
+                    errors.append(f"第{i + 1}張圖片無法取得 URL")
+                    helper.debug_print(f"第 {i + 1} 張圖片無有效 URL，跳過")
                     continue
 
-            # === Layer 3：識別需重試的索引（重複或失敗） ===
-            indices_to_retry = []
-            seen_urls = set()
-            for idx in sorted(index_to_url.keys()):
-                url = index_to_url[idx]
-                if url in seen_urls:
-                    indices_to_retry.append(idx)
-                else:
-                    seen_urls.add(url)
+                # 替換 type 參數為 w3840（原圖解析度）
+                full_url = re.sub(r"\?type=\w+", "?type=w3840", raw_url)
+                img_urls.append(full_url)
+                helper.debug_print(f"第 {i + 1} 張圖片 URL: {full_url}")
 
-            # 加入完全失敗的索引
-            all_indices = set(range(len(img_elements)))
-            successful_indices = set(index_to_url.keys())
-            failed_indices = all_indices - successful_indices
-            indices_to_retry.extend(sorted(failed_indices))
-            indices_to_retry = sorted(set(indices_to_retry))
-
-            if indices_to_retry:
-                helper.debug_print(f"準備重新擷取 {len(indices_to_retry)} 張圖片，索引: {indices_to_retry}")
-                for retry_idx in indices_to_retry:
-                    try:
-                        img_element = img_elements[retry_idx]
-                        if not img_element.is_visible():
-                            helper.debug_print(f"重試：第 {retry_idx + 1} 張圖片不可見，跳過")
-                            continue
-
-                        stale_url = index_to_url.get(retry_idx)
-                        img_element.click()
-                        page.wait_for_timeout(500)
-
-                        popup_img = None
-                        for _attempt in range(8):
-                            popup_img_el = frame.query_selector("div.cpv__img_wrap img.cpv__img")
-                            if popup_img_el:
-                                popup_img = popup_img_el
-                                break
-                            page.wait_for_timeout(200)
-
-                        if not popup_img:
-                            helper.debug_print(f"重試：第 {retry_idx + 1} 張圖片未找到彈窗")
-                            try:
-                                page.keyboard.press("Escape")
-                                _wait_popup_closed(frame, page)
-                            except Exception:
-                                pass
-                            continue
-
-                        img_url = popup_img.get_attribute("src")
-                        if stale_url:
-                            for _stale in range(15):
-                                if img_url != stale_url:
-                                    break
-                                page.wait_for_timeout(300)
-                                popup_img_el = frame.query_selector("div.cpv__img_wrap img.cpv__img")
-                                if popup_img_el:
-                                    popup_img = popup_img_el
-                                img_url = popup_img.get_attribute("src")
-
-                        if img_url and img_url.startswith("http") and img_url != stale_url:
-                            index_to_url[retry_idx] = img_url
-                            helper.debug_print(f"重試成功：第 {retry_idx + 1} 張圖片 URL: {img_url}")
-                        else:
-                            helper.debug_print(f"重試失敗：第 {retry_idx + 1} 張圖片仍為相同或無效 URL")
-
-                        page.keyboard.press("Escape")
-                        _wait_popup_closed(frame, page)
-
-                    except Exception as e:
-                        error_msg = str(e)
-                        if "closed" in error_msg.lower():
-                            helper.debug_print(f"重試：第 {retry_idx + 1} 張圖片處理時瀏覽器被關閉")
-                            break
-                        helper.debug_print(f"重試：第 {retry_idx + 1} 張圖片錯誤: {error_msg}")
-                        try:
-                            page.keyboard.press("Escape")
-                            _wait_popup_closed(frame, page)
-                        except Exception:
-                            pass
-
-                # 從 index_to_url 按索引順序重建 img_urls
-                img_urls = [index_to_url[idx] for idx in sorted(index_to_url.keys())]
-                helper.debug_print(f"重試後共有 {len(img_urls)} 張圖片 URL")
-            else:
-                helper.debug_print("所有圖片擷取成功，無需重試")
-
-            # === 去重 + 排序（移至 browser.close 前） ===
+            # 去重 + 排序
             img_urls = _dedup_urls(img_urls)
             img_urls = _sort_urls_by_number(img_urls)
-
-            # === 序號完整性驗證：檢查缺漏並重新爬取 ===
-            collected_numbers = set()
-            for url in img_urls:
-                m = re.search(r"_(\d+)\.(jpg|jpeg|png|gif)", url)
-                if m:
-                    collected_numbers.add(int(m.group(1)))
-
-            if collected_numbers:
-                # 取 max(已收集最大序號, 頁面元素數量)，確保尾端遺漏也能偵測
-                max_num = max(max(collected_numbers), len(img_elements))
-                expected = set(range(1, max_num + 1))
-                missing = sorted(expected - collected_numbers)
-            else:
-                missing = []
-
-            if missing:
-                helper.debug_print(f"序號完整性驗證：缺漏序號 {missing}")
-
-                # 開啟彈窗：點擊最後一個可見元素，透過 carousel 導航
-                try:
-                    last_elem = img_elements[-1]
-                    last_elem.scroll_into_view_if_needed()
-                    page.wait_for_timeout(300)
-                    last_elem.click()
-                    page.wait_for_timeout(1000)
-
-                    popup_img = None
-                    for _attempt in range(12):
-                        popup_img_el = frame.query_selector("div.cpv__img_wrap img.cpv__img")
-                        if popup_img_el:
-                            popup_img = popup_img_el
-                            break
-                        page.wait_for_timeout(300)
-
-                    if popup_img:
-                        # 記錄初始 URL，用於偵測繞回
-                        initial_url = popup_img.get_attribute("src")
-                        helper.debug_print(f"carousel 起始位置：{initial_url}")
-
-                        for num in sorted(missing):
-                            expected_pattern = f"_{num}."
-                            found = False
-                            seen_in_nav = set()
-
-                            # 無限導航直到找到目標或偵測到繞回
-                            while True:
-                                img_url = popup_img.get_attribute("src")
-
-                                if img_url and expected_pattern in img_url:
-                                    img_urls.append(img_url)
-                                    found = True
-                                    helper.debug_print(f"序號 {num} 補回成功（carousel 導航）：{img_url}")
-                                    break
-
-                                # 偵測繞回：如果已經看過這個 URL，代表已繞一圈
-                                if img_url in seen_in_nav:
-                                    helper.debug_print(f"序號 {num}：carousel 已繞回，停止導航")
-                                    break
-                                seen_in_nav.add(img_url)
-
-                                helper.debug_print(f"序號 {num} 導航中，當前: {img_url}")
-
-                                page.keyboard.press("ArrowRight")
-                                page.wait_for_timeout(500)
-                                popup_img_el = frame.query_selector("div.cpv__img_wrap img.cpv__img")
-                                if popup_img_el:
-                                    popup_img = popup_img_el
-
-                            if not found:
-                                helper.debug_print(f"序號 {num} 補回失敗：carousel 導航未找到")
-                                errors.append(f"序號 {num} 圖片無法成功擷取")
-                    else:
-                        helper.debug_print("序號補回：無法開啟彈窗")
-
-                    page.keyboard.press("Escape")
-                    _wait_popup_closed(frame, page)
-
-                except Exception as e:
-                    error_msg = str(e)
-                    if "closed" not in error_msg.lower():
-                        helper.debug_print(f"序號補回錯誤: {error_msg}")
-                    try:
-                        page.keyboard.press("Escape")
-                        _wait_popup_closed(frame, page)
-                    except Exception:
-                        pass
-
-                # 有新增圖片，重新去重 + 排序
-                img_urls = _dedup_urls(img_urls)
-                img_urls = _sort_urls_by_number(img_urls)
-            else:
-                helper.debug_print("序號完整性驗證通過，無缺漏")
 
             browser.close()
 
