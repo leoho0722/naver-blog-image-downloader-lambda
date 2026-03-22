@@ -205,6 +205,14 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
                 elapsed = helper.calculate_elapsed_time(start_time)
                 return DownloadResult(0, 0, 0, [], ["未找到任何圖片"], elapsed)
 
+            # debug：記錄所有元素的 src 與 data-lazy-src 屬性
+            helper.debug_print("=== 元素屬性 debug ===")
+            for i, elem in enumerate(img_elements):
+                elem_src = elem.get_attribute("src") or "(無)"
+                elem_lazy = elem.get_attribute("data-lazy-src") or "(無)"
+                helper.debug_print(f"  元素[{i}] src={elem_src} | data-lazy-src={elem_lazy}")
+            helper.debug_print("=== 元素屬性 debug 結束 ===")
+
             previous_url = None  # 追蹤上一張圖片的 URL，用於偵測彈窗未更新
             index_to_url = {}  # 記錄每個索引成功擷取的 URL
 
