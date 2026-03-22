@@ -1,3 +1,5 @@
+"""工具函式：debug 輸出、log 收集、時間計算"""
+
 import os
 import time
 
@@ -27,12 +29,16 @@ def debug_print(message: str):
 
 
 def get_logs() -> list[dict]:
-    """取得收集的 log list"""
+    """取得收集的 log list
+
+    Returns:
+        包含 timestamp 與 message 的 dict 列表（副本）
+    """
     return list(_logs)
 
 
 def clear_logs():
-    """清空收集的 log list"""
+    """清空收集的 log list，通常在新任務開始前呼叫"""
     _logs.clear()
 
 

@@ -1,3 +1,5 @@
+"""S3 儲存基礎類別，定義共用常數與 CRUD 抽象介面"""
+
 import json
 import os
 from abc import ABC, abstractmethod
@@ -13,6 +15,7 @@ class BaseStore(ABC):
     """S3 儲存基礎類別，提供共用的 S3 CRUD 操作"""
 
     def __init__(self):
+        """初始化 S3 client 與儲存設定（bucket 名稱、key 前綴）"""
         self._s3 = boto3.client("s3")
         self._bucket = BUCKET_NAME
         self._prefix = PREFIX

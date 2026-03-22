@@ -1,3 +1,5 @@
+"""Lambda 入口點：路由 submit/status/async worker，含圖片擷取邏輯"""
+
 import json
 import re
 
@@ -14,8 +16,92 @@ job_store = JobStore()
 log_store = LogStore()
 
 
+def _dedup_urls(img_urls: list[str]) -> list[str]:
+    """去重：移除重複的 URL，保留首次出現的順序
+
+    Args:
+        img_urls (list[str]): 可能含重複的圖片 URL 列表
+
+    Returns:
+        去重後的圖片 URL 列表
+    """
+    if not img_urls:
+        return img_urls
+
+    helper.debug_print(f"去重前共 {len(img_urls)} 筆 URL：")
+    for i, url in enumerate(img_urls):
+        helper.debug_print(f"  [{i + 1}] {url}")
+
+    seen = set()
+    unique_urls = []
+    duplicate_urls = []
+    for url in img_urls:
+        if url not in seen:
+            seen.add(url)
+            unique_urls.append(url)
+        else:
+            duplicate_urls.append(url)
+    if duplicate_urls:
+        helper.debug_print(f"去重：從 {len(img_urls)} 筆移除 {len(duplicate_urls)} 筆重複，剩餘 {len(unique_urls)} 筆")
+        for dup_url in duplicate_urls:
+            helper.debug_print(f"去重移除: {dup_url}")
+
+    helper.debug_print(f"去重後共 {len(unique_urls)} 筆 URL：")
+    for i, url in enumerate(unique_urls):
+        helper.debug_print(f"  [{i + 1}] {url}")
+
+    return unique_urls
+
+
+def _sort_urls_by_number(img_urls: list[str]) -> list[str]:
+    """根據檔名中的數字編號（如 _1.jpg、_31.jpg）遞增排序
+
+    Args:
+        img_urls (list[str]): 圖片 URL 列表
+
+    Returns:
+        按編號排序後的圖片 URL 列表
+    """
+    if len(img_urls) <= 1:
+        return img_urls
+
+    try:
+        url_with_numbers = []
+        for url in img_urls:
+            match = re.search(r"_(\d+)\.(jpg|jpeg|png|gif)", url)
+            if match:
+                number = int(match.group(1))
+                url_with_numbers.append((number, url))
+            else:
+                url_with_numbers.append((float("inf"), url))
+
+        helper.debug_print(f"提取到的編號: {[num for num, _ in url_with_numbers]}")
+
+        all_numbers = [num for num, _ in url_with_numbers if num != float("inf")]
+        is_sorted = all(all_numbers[i] <= all_numbers[i + 1] for i in range(len(all_numbers) - 1))
+
+        if not is_sorted:
+            url_with_numbers.sort(key=lambda x: x[0])
+            img_urls = [url for _, url in url_with_numbers]
+            helper.debug_print(f"圖片順序已修正,排序後編號: {[num for num, _ in url_with_numbers]}")
+        else:
+            helper.debug_print("圖片順序正確,無需調整")
+
+    except Exception as e:
+        helper.debug_print(f"順序修正時發生錯誤: {e},保持原順序")
+
+    return img_urls
+
+
 def _wait_popup_closed(frame, page, max_retries=10, interval=200):
-    """按 Escape 後，主動驗證彈窗已消失（元素被移除或不可見）"""
+    """按 Escape 後，主動輪詢直到彈窗消失（元素被移除或不可見）
+
+    Args:
+        frame: Playwright Frame 或 Page，用於查詢彈窗元素
+        page: Playwright Page，用於 wait_for_timeout
+        max_retries (int): 最大輪詢次數，預設 10
+        interval (int): 每次輪詢間隔毫秒數，預設 200
+    """
     for _ in range(max_retries):
         popup_check = frame.query_selector("div.cpv__img_wrap img.cpv__img")
         if not popup_check or not popup_check.is_visible():
@@ -24,6 +110,19 @@ def _wait_popup_closed(frame, page, max_retries=10, interval=200):
 
 
 def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
+    """從 Naver Blog 文章擷取所有原始圖片 URL
+
+    透過 Playwright Chromium 訪問文章頁面，逐一點擊圖片開啟彈窗，
+    從彈窗中取得原圖 URL。包含三層防禦機制確保完整性：
+    Layer 1 確認彈窗關閉、Layer 2 偵測 stale src、Layer 3 重試遺漏，
+    以及最終的序號完整性驗證。
+
+    Args:
+        blog_url (str): Naver Blog 文章 URL
+
+    Returns:
+        DownloadResult 包含擷取到的圖片 URL、錯誤訊息與統計資訊
+    """
     start_time = helper.get_current_time()
     errors = []
     img_urls = []
@@ -220,11 +319,9 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
                             helper.debug_print(f"重試：第 {retry_idx + 1} 張圖片不可見，跳過")
                             continue
 
-                        # 使用該索引上次擷取到的 URL 作為 stale 比較基準
                         stale_url = index_to_url.get(retry_idx)
-
                         img_element.click()
-                        page.wait_for_timeout(500)  # 重試時給更多等待時間
+                        page.wait_for_timeout(500)
 
                         popup_img = None
                         for _attempt in range(8):
@@ -243,7 +340,6 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
                                 pass
                             continue
 
-                        # 等待 src 不等於 stale URL
                         img_url = popup_img.get_attribute("src")
                         if stale_url:
                             for _stale in range(15):
@@ -282,64 +378,105 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
             else:
                 helper.debug_print("所有圖片擷取成功，無需重試")
 
-            browser.close()
+            # === 去重 + 排序（移至 browser.close 前） ===
+            img_urls = _dedup_urls(img_urls)
+            img_urls = _sort_urls_by_number(img_urls)
 
-        # === 去重：移除重複的 URL ===
-        if img_urls:
-            helper.debug_print(f"去重前共 {len(img_urls)} 筆 URL：")
-            for i, url in enumerate(img_urls):
-                helper.debug_print(f"  [{i + 1}] {url}")
-
-            seen = set()
-            unique_urls = []
-            duplicate_urls = []
+            # === 序號完整性驗證：檢查缺漏並重新爬取 ===
+            collected_numbers = set()
             for url in img_urls:
-                if url not in seen:
-                    seen.add(url)
-                    unique_urls.append(url)
-                else:
-                    duplicate_urls.append(url)
-            if duplicate_urls:
-                helper.debug_print(
-                    f"去重：從 {len(img_urls)} 筆移除 {len(duplicate_urls)} 筆重複，剩餘 {len(unique_urls)} 筆"
-                )
-                for dup_url in duplicate_urls:
-                    helper.debug_print(f"去重移除: {dup_url}")
-            img_urls = unique_urls
+                m = re.search(r"_(\d+)\.(jpg|jpeg|png|gif)", url)
+                if m:
+                    collected_numbers.add(int(m.group(1)))
 
-            helper.debug_print(f"去重後共 {len(img_urls)} 筆 URL：")
-            for i, url in enumerate(img_urls):
-                helper.debug_print(f"  [{i + 1}] {url}")
+            if collected_numbers:
+                max_num = max(collected_numbers)
+                expected = set(range(1, max_num + 1))
+                missing = sorted(expected - collected_numbers)
+            else:
+                missing = []
 
-        # 修正順序：根據檔名編號排序
-        if len(img_urls) > 1:
-            try:
-                # 提取所有圖片的編號
-                url_with_numbers = []
-                for url in img_urls:
-                    match = re.search(r"_(\d+)\.(jpg|jpeg|png|gif)", url)
-                    if match:
-                        number = int(match.group(1))
-                        url_with_numbers.append((number, url))
-                    else:
-                        url_with_numbers.append((float("inf"), url))  # 無法提取編號的放最後
+            if missing:
+                helper.debug_print(f"序號完整性驗證：缺漏序號 {missing}")
+                for num in missing:
+                    target_idx = num - 1
+                    if target_idx >= len(img_elements):
+                        helper.debug_print(f"序號 {num}：對應索引 {target_idx} 超出元素範圍，跳過")
+                        continue
 
-                helper.debug_print(f"提取到的編號: {[num for num, _ in url_with_numbers]}")
+                    try:
+                        elem = img_elements[target_idx]
+                        if not elem.is_visible():
+                            helper.debug_print(f"序號 {num}：元素不可見，跳過")
+                            continue
 
-                # 檢查全部編號是否已經是遞增的
-                all_numbers = [num for num, _ in url_with_numbers if num != float("inf")]
-                is_sorted = all(all_numbers[i] <= all_numbers[i + 1] for i in range(len(all_numbers) - 1))
+                        # 滾動到元素並點擊，給予較長等待
+                        elem.scroll_into_view_if_needed()
+                        page.wait_for_timeout(300)
+                        elem.click()
+                        page.wait_for_timeout(1000)
 
-                if not is_sorted:
-                    # 按編號排序
-                    url_with_numbers.sort(key=lambda x: x[0])
-                    img_urls = [url for _, url in url_with_numbers]
-                    helper.debug_print(f"圖片順序已修正,排序後編號: {[num for num, _ in url_with_numbers]}")
-                else:
-                    helper.debug_print("圖片順序正確,無需調整")
+                        popup_img = None
+                        for _attempt in range(12):
+                            popup_img_el = frame.query_selector("div.cpv__img_wrap img.cpv__img")
+                            if popup_img_el:
+                                popup_img = popup_img_el
+                                break
+                            page.wait_for_timeout(300)
 
-            except Exception as e:
-                helper.debug_print(f"順序修正時發生錯誤: {e},保持原順序")
+                        if not popup_img:
+                            helper.debug_print(f"序號 {num}：未找到彈窗")
+                            try:
+                                page.keyboard.press("Escape")
+                                _wait_popup_closed(frame, page)
+                            except Exception:
+                                pass
+                            continue
+
+                        img_url = popup_img.get_attribute("src")
+
+                        # 等待 URL 更新為包含正確序號的圖片
+                        expected_pattern = f"_{num}."
+                        for _wait in range(15):
+                            if img_url and expected_pattern in img_url:
+                                break
+                            page.wait_for_timeout(300)
+                            popup_img_el = frame.query_selector("div.cpv__img_wrap img.cpv__img")
+                            if popup_img_el:
+                                popup_img = popup_img_el
+                            img_url = popup_img.get_attribute("src")
+
+                        if img_url and img_url.startswith("http") and expected_pattern in img_url:
+                            img_urls.append(img_url)
+                            helper.debug_print(f"序號 {num} 補回成功：{img_url}")
+                        else:
+                            helper.debug_print(
+                                f"序號 {num} 補回失敗：URL 不匹配 (期望含 {expected_pattern}，實際: {img_url})"
+                            )
+                            errors.append(f"序號 {num} 圖片無法成功擷取")
+
+                        page.keyboard.press("Escape")
+                        _wait_popup_closed(frame, page)
+
+                    except Exception as e:
+                        error_msg = str(e)
+                        if "closed" in error_msg.lower():
+                            helper.debug_print(f"序號 {num} 補回時瀏覽器被關閉")
+                            break
+                        helper.debug_print(f"序號 {num} 補回錯誤: {error_msg}")
+                        try:
+                            page.keyboard.press("Escape")
+                            _wait_popup_closed(frame, page)
+                        except Exception:
+                            pass
+
+                # 有新增圖片，重新去重 + 排序
+                img_urls = _dedup_urls(img_urls)
+                img_urls = _sort_urls_by_number(img_urls)
+            else:
+                helper.debug_print("序號完整性驗證通過，無缺漏")
+
+            browser.close()
 
         elapsed = helper.calculate_elapsed_time(start_time)
         return DownloadResult(
@@ -357,7 +494,16 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
 
 
 def _parse_request_body(event) -> dict:
-    """解析 API Gateway 或直接呼叫的 event，回傳 body dict"""
+    """解析 API Gateway 或 Lambda 直接呼叫的 event，回傳 body dict
+
+    支援三種輸入格式：JSON 字串、含 body 欄位的 API Gateway event、純 dict。
+
+    Args:
+        event: Lambda event，可能是 str、dict 或含 body 的 API Gateway 格式
+
+    Returns:
+        解析後的請求 body dict
+    """
     if isinstance(event, str):
         event = json.loads(event or "{}")
 
@@ -379,7 +525,15 @@ def _parse_request_body(event) -> dict:
 
 
 def _handle_submit(body, context):
-    """建立任務 → 非同步呼叫 worker → 回傳 job_id"""
+    """處理下載請求：建立 S3 任務 → 非同步呼叫 worker → 回傳 job_id
+
+    Args:
+        body (dict): 請求內容，需包含 blog_url
+        context: Lambda context，用於取得 function_name 進行非同步自呼叫
+
+    Returns:
+        API Gateway 回應 dict（HTTP 202 含 job_id，或 400 錯誤）
+    """
     blog_url = body.get("blog_url")
     if not blog_url:
         response = build_response(400, {"error": "缺少 blog_url 參數"})
@@ -408,7 +562,14 @@ def _handle_submit(body, context):
 
 
 def _handle_status(body):
-    """查詢任務狀態"""
+    """查詢任務狀態與結果
+
+    Args:
+        body (dict): 請求內容，需包含 job_id
+
+    Returns:
+        API Gateway 回應 dict（HTTP 200/404/500 含任務狀態）
+    """
     job_id = body.get("job_id")
     if not job_id:
         response = build_response(400, {"error": "缺少 job_id 參數"})
@@ -431,7 +592,14 @@ def _handle_status(body):
 
 
 def _handle_async_worker(event):
-    """背景 worker：執行 Playwright 爬取，結果寫入 S3"""
+    """背景 worker：執行 Playwright 爬取圖片，結果與 log 寫入 S3
+
+    由 _handle_submit 透過 Lambda 非同步呼叫觸發。
+    無論成功或失敗，最終都會將 debug log 儲存至 S3。
+
+    Args:
+        event (dict): 包含 job_id 與 blog_url 的 worker 事件
+    """
     job_id = event["job_id"]
     blog_url = event["blog_url"]
     helper.clear_logs()
@@ -455,6 +623,12 @@ def _handle_async_worker(event):
 
 
 def lambda_handler(event, context):
+    """Lambda 入口點：根據 event 路由至 submit、status 或 async worker
+
+    Args:
+        event: Lambda event（API Gateway 請求或非同步 worker 呼叫）
+        context: Lambda context
+    """
     helper.debug_print(f"Event: {event}")
 
     # 1. 非同步 worker 模式（被自己 async invoke）
