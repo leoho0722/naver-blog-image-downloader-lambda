@@ -17,7 +17,7 @@ COPY app.py ${LAMBDA_TASK_ROOT}/
 COPY helper.py ${LAMBDA_TASK_ROOT}/
 COPY data_models.py ${LAMBDA_TASK_ROOT}/
 COPY response_builder.py ${LAMBDA_TASK_ROOT}/
-COPY job_store.py ${LAMBDA_TASK_ROOT}/
+COPY job_store/ ${LAMBDA_TASK_ROOT}/job_store/
 
 # 設置工作目錄權限
 RUN chmod -R 777 /ms-playwright
