@@ -6,9 +6,12 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 import helper
-import job_store
 from data_models import DownloadResult, JobStatus
+from job_store import JobStore, LogStore
 from response_builder import build_response
+
+job_store = JobStore()
+log_store = LogStore()
 
 
 def _wait_popup_closed(frame, page, max_retries=10, interval=200):
@@ -448,7 +451,7 @@ def _handle_async_worker(event):
         helper.debug_print(f"任務 {job_id} 處理失敗: {e}")
         job_store.update_job(job_id, JobStatus.FAILED, {"error": str(e)})
     finally:
-        job_store.save_logs(job_id, helper.get_logs())
+        log_store.save_logs(job_id, helper.get_logs())
 
 
 def lambda_handler(event, context):
