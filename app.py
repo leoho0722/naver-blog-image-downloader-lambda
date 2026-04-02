@@ -135,20 +135,14 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
             )
             page = context.new_page()
 
+            # 將手機版 URL 轉為桌面版，確保載入桌面版頁面結構
+            if "m.blog.naver.com" in blog_url:
+                blog_url = blog_url.replace("m.blog.naver.com", "blog.naver.com", 1)
+                helper.debug_print(f"已將手機版 URL 轉為桌面版: {blog_url}")
+
             helper.debug_print(f"正在訪問: {blog_url}")
             page.goto(blog_url, wait_until="domcontentloaded", timeout=30000)
             page.wait_for_timeout(500)  # 等待頁面穩定
-
-            # 若是手機版則切換到電腦版
-            if "m.blog.naver.com" in page.url:
-                try:
-                    pc_btn = page.locator("a#goToBase")
-                    if pc_btn.is_visible():
-                        pc_btn.click()
-                        page.wait_for_load_state("domcontentloaded", timeout=10000)
-                        page.wait_for_timeout(500)
-                except Exception as e:
-                    helper.debug_print(f"切換到電腦版時發生錯誤: {e}")
 
             # 等待 mainFrame 載入
             try:

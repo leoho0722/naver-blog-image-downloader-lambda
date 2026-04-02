@@ -74,3 +74,19 @@ make deploy          # 以上兩步合一
   - 常用 type：`feat`（新功能）、`fix`（修正）、`refactor`（重構）、`docs`（文件）、`chore`（雜項）、`ci`（CI/CD）、`test`（測試）
   - 範例：`fix: 修正 image_urls 排序問題，改為遞增排序`
 - 程式碼註解與日誌使用正體中文
+
+## Commit 風格
+
+使用正體中文撰寫 conventional commits，常用 type：`feat`（新功能）、`fix`（修正）、`refactor`（重構）、`docs`（文件）、`chore`（雜項）、`ci`（CI/CD）、`test`（測試）
+
+- `feat(s010): 實作 ApiService（AWS Amplify SDK + 非同步任務模式）`
+- `fix: 修正下載進度對話框在 build 期間觸發 setState`
+
+description（body）使用列點格式，例如：
+
+```text
+refactor(settings-view): 設定頁面 Cupertino → Material 3 重構
+
+- 移除所有 Cupertino 元件
+- 統一採用 Material 3 Card.filled + ListTile 呈現
+```
