@@ -8,28 +8,32 @@ A utility API deployed on AWS Lambda with a modular routing architecture support
 
 ```text
 .
-├── app.py                      # Lambda entry point, route dispatching
-├── router.py                   # Lightweight router (@route decorator)
-├── routes/                     # Route module package
-│   ├── __init__.py             #   Import all route modules
-│   ├── photos.py               #   /api/photos — image extraction
-│   └── whats_new.py            #   /api/whatsNew — What's New
-├── data_models.py              # JobStatus enum, DownloadResult dataclass
-├── job_store/                  # S3 storage package (OOP architecture)
-│   ├── base.py                 #   BaseStore (ABC)
-│   ├── job.py                  #   JobStore — job CRUD
-│   ├── log.py                  #   LogStore — debug logs
-│   └── whats_new.py            #   WhatsNewStore — What's New data
-├── helper.py                   # Helper functions (time, debug output)
-├── response_builder.py         # HTTP Response Builder
-├── requirements.txt            # Python dependencies
+├── src/                        # Source code
+│   ├── app.py                  #   Lambda entry point, route dispatching
+│   ├── router.py               #   Lightweight router (@route decorator)
+│   ├── routes/                 #   Route module package
+│   │   ├── __init__.py         #     Import all route modules
+│   │   ├── photos.py           #     /api/photos — image extraction
+│   │   └── whats_new.py        #     /api/whatsNew — What's New
+│   ├── data_models.py          #   JobStatus enum, DownloadResult dataclass
+│   ├── job_store/              #   S3 storage package (OOP architecture)
+│   │   ├── base.py             #     BaseStore (ABC)
+│   │   ├── job.py              #     JobStore — job CRUD
+│   │   ├── log.py              #     LogStore — debug logs
+│   │   └── whats_new.py        #     WhatsNewStore — What's New data
+│   ├── helper.py               #   Helper functions (time, debug output)
+│   └── response_builder.py     #   HTTP Response Builder
+├── tests/                      # Tests
+│   └── api.http                #   REST Client API test file
+├── mock/                       # Mock data for testing
+├── scripts/                    # Deployment scripts
+│   ├── deploy-image.sh         #   Build and upload Docker image to ECR
+│   ├── update-function.sh      #   Update Lambda function code and config
+│   └── setup-aws-resources.sh  #   First-time AWS resource init (S3, IAM, Lambda)
 ├── Dockerfile                  # Container image definition
 ├── Makefile                    # Deployment commands
-├── pyproject.toml              # Ruff linter configuration
-└── scripts/
-    ├── deploy-image.sh         # Build and upload Docker image to ECR
-    ├── update-function.sh      # Update Lambda function code and config
-    └── setup-aws-resources.sh  # First-time AWS resource initialization (S3, IAM, Lambda)
+├── requirements.txt            # Python dependencies
+└── pyproject.toml              # Ruff linter configuration
 ```
 
 ## Environment Variables

@@ -12,14 +12,8 @@ WORKDIR ${LAMBDA_TASK_ROOT}
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 複製主程式
-COPY app.py ${LAMBDA_TASK_ROOT}/
-COPY router.py ${LAMBDA_TASK_ROOT}/
-COPY helper.py ${LAMBDA_TASK_ROOT}/
-COPY data_models.py ${LAMBDA_TASK_ROOT}/
-COPY response_builder.py ${LAMBDA_TASK_ROOT}/
-COPY job_store/ ${LAMBDA_TASK_ROOT}/job_store/
-COPY routes/ ${LAMBDA_TASK_ROOT}/routes/
+# 複製主程式（從 src/ 展開至 LAMBDA_TASK_ROOT）
+COPY src/ ${LAMBDA_TASK_ROOT}/
 
 # 設置工作目錄權限
 RUN chmod -R 777 /ms-playwright

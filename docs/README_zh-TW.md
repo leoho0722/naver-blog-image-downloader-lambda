@@ -8,28 +8,32 @@
 
 ```text
 .
-├── app.py                      # Lambda 入口點，路由分派
-├── router.py                   # 輕量級路由器（@route 裝飾器）
-├── routes/                     # 路由模組套件
-│   ├── __init__.py             #   匯入所有路由模組
-│   ├── photos.py               #   /api/photos — 圖片擷取
-│   └── whats_new.py            #   /api/whatsNew — 新功能介紹
-├── data_models.py              # JobStatus enum、DownloadResult dataclass
-├── job_store/                  # S3 儲存套件（OOP 架構）
-│   ├── base.py                 #   BaseStore（ABC）
-│   ├── job.py                  #   JobStore — 任務 CRUD
-│   ├── log.py                  #   LogStore — debug log
-│   └── whats_new.py            #   WhatsNewStore — 新功能介紹資料
-├── helper.py                   # 輔助函數（時間計算、除錯輸出）
-├── response_builder.py         # HTTP Response Builder
-├── requirements.txt            # Python 依賴套件
+├── src/                        # 原始碼
+│   ├── app.py                  #   Lambda 入口點，路由分派
+│   ├── router.py               #   輕量級路由器（@route 裝飾器）
+│   ├── routes/                 #   路由模組套件
+│   │   ├── __init__.py         #     匯入所有路由模組
+│   │   ├── photos.py           #     /api/photos — 圖片擷取
+│   │   └── whats_new.py        #     /api/whatsNew — 新功能介紹
+│   ├── data_models.py          #   JobStatus enum、DownloadResult dataclass
+│   ├── job_store/              #   S3 儲存套件（OOP 架構）
+│   │   ├── base.py             #     BaseStore（ABC）
+│   │   ├── job.py              #     JobStore — 任務 CRUD
+│   │   ├── log.py              #     LogStore — debug log
+│   │   └── whats_new.py        #     WhatsNewStore — 新功能介紹資料
+│   ├── helper.py               #   輔助函數（時間計算、除錯輸出）
+│   └── response_builder.py     #   HTTP Response Builder
+├── tests/                      # 測試
+│   └── api.http                #   REST Client API 測試檔
+├── mock/                       # 測試用 mock 資料
+├── scripts/                    # 部署腳本
+│   ├── deploy-image.sh         #   建構並上傳 Docker 映像至 ECR
+│   ├── update-function.sh      #   更新 Lambda 函數程式碼與設定
+│   └── setup-aws-resources.sh  #   首次 AWS 資源初始化（S3、IAM、Lambda）
 ├── Dockerfile                  # 容器映像定義
 ├── Makefile                    # 部署相關指令
-├── pyproject.toml              # Ruff linter 設定
-└── scripts/
-    ├── deploy-image.sh         # 建構並上傳 Docker 映像至 ECR
-    ├── update-function.sh      # 更新 Lambda 函數程式碼與設定
-    └── setup-aws-resources.sh  # 首次 AWS 資源初始化（S3、IAM、Lambda）
+├── requirements.txt            # Python 依賴套件
+└── pyproject.toml              # Ruff linter 設定
 ```
 
 ## 環境變數設定
