@@ -129,10 +129,21 @@ POLICY_DOC=$(cat <<EOF
             "Resource": "arn:aws:s3:::${S3_BUCKET_NAME}/jobs/*"
         },
         {
-            "Sid": "S3WhatsNewRead",
+            "Sid": "S3WhatsNewReadWrite",
             "Effect": "Allow",
-            "Action": "s3:GetObject",
+            "Action": ["s3:GetObject", "s3:PutObject"],
             "Resource": "arn:aws:s3:::${S3_BUCKET_NAME}/whatsnew/*"
+        },
+        {
+            "Sid": "S3WhatsNewList",
+            "Effect": "Allow",
+            "Action": "s3:ListBucket",
+            "Resource": "arn:aws:s3:::${S3_BUCKET_NAME}",
+            "Condition": {
+                "StringLike": {
+                    "s3:prefix": "whatsnew/*"
+                }
+            }
         },
         {
             "Sid": "LambdaSelfInvoke",

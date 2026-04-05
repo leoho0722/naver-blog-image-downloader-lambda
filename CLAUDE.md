@@ -24,10 +24,16 @@ Naver Blog 工具 API，部署於 AWS Lambda（容器映像模式）。透過模
   - `base.py` — `BaseStore`（ABC）：S3 CRUD 抽象介面（`_put_json`、`_get_json`、`_build_key`、`_file_suffix`）
   - `job.py` — `JobStore(BaseStore)`：任務 CRUD（`create_job`、`update_job`、`get_job`）
   - `log.py` — `LogStore(BaseStore)`：debug log 儲存（`save_logs`）
-  - `whats_new.py` — `WhatsNewStore(BaseStore)`：新功能介紹資料讀取（`get_whats_new`）
+  - `whats_new.py` — `WhatsNewStore(BaseStore)`：新功能介紹資料讀寫（`get_whats_new`、`put_whats_new`、`list_versions`）
   - S3 key 格式：`jobs/{job_id}/{job_id}_results.json`、`jobs/{job_id}/{job_id}_logs.json`、`whatsnew/<version>/whats_new_<locale>.json`
 - `src/helper.py` — 工具函式（debug 輸出、log 收集 `get_logs`/`clear_logs`、時間計算）
 - `src/response_builder.py` — HTTP 回應格式建構（含 CORS headers）
+
+### 管理腳本
+
+- `scripts/manage_whats_new.py` — whatsNew JSON 管理 CLI（上傳/列出）
+  - 用法：`uv run --with boto3 scripts/manage_whats_new.py upload -v 1.5.0 -l zh-TW -f mock/mock_whats_new_zh-TW.json`
+  - 支援 `--dry-run`、`--dir` 批次上傳、`list` 子命令
 
 ### 測試
 

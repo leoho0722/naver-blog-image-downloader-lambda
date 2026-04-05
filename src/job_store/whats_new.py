@@ -39,3 +39,33 @@ class WhatsNewStore(BaseStore):
             解析後的 JSON dict，若不存在則回傳 None
         """
         return self._get_json(f"{version}/{locale}")
+
+    def put_whats_new(self, version: str, locale: str, data: dict) -> str:
+        """寫入指定版號與語系的新功能介紹資料至 S3
+
+        Args:
+            version (str): App 版號（如 1.4.0）
+            locale (str): App 語系（如 zh-TW、en、ja、ko）
+            data (dict): 新功能介紹 JSON 資料
+
+        Returns:
+            str: 寫入的 S3 object key
+        """
+        key_id = f"{version}/{locale}"
+        self._put_json(key_id, data)
+        return self._build_key(key_id)
+
+    def list_versions(self, prefix: str = "") -> list[str]:
+        """列出 S3 上 whatsnew/ 前綴下的所有 key
+
+        Args:
+            prefix (str): 可選前綴過濾（如特定版號 "1.4.0"）
+
+        Returns:
+            list[str]: S3 object key 列表
+        """
+        resp = self._s3.list_objects_v2(
+            Bucket=self._bucket,
+            Prefix=f"whatsnew/{prefix}",
+        )
+        return [obj["Key"] for obj in resp.get("Contents", [])]
