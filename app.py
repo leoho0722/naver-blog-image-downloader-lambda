@@ -54,7 +54,7 @@ def _dedup_urls(img_urls: list[str]) -> list[str]:
 
 
 def _sort_urls_by_number(img_urls: list[str]) -> list[str]:
-    """根據檔名中的數字編號（如 _1.jpg、_31.jpg）遞增排序
+    """根據檔名中的數字編號（如 /1.jpg、_31.jpg）遞增排序
 
     Args:
         img_urls (list[str]): 圖片 URL 列表
@@ -68,7 +68,7 @@ def _sort_urls_by_number(img_urls: list[str]) -> list[str]:
     try:
         url_with_numbers = []
         for url in img_urls:
-            match = re.search(r"_(\d+)\.(jpg|jpeg|png|gif)", url)
+            match = re.search(r"[/_](\d+)\.(jpg|jpeg|png|gif)", url, re.IGNORECASE)
             if match:
                 number = int(match.group(1))
                 url_with_numbers.append((number, url))
@@ -206,7 +206,7 @@ def download_images_from_naver_blog(blog_url: str) -> DownloadResult:
         # 根據最終序號缺漏計算實際失敗數量
         final_numbers = set()
         for url in img_urls:
-            m = re.search(r"_(\d+)\.(jpg|jpeg|png|gif)", url)
+            m = re.search(r"[/_](\d+)\.(jpg|jpeg|png|gif)", url, re.IGNORECASE)
             if m:
                 final_numbers.add(int(m.group(1)))
         if final_numbers:
