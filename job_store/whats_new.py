@@ -6,7 +6,7 @@ from .base import BaseStore
 class WhatsNewStore(BaseStore):
     """依 App 版號與語系存取 S3 上的新功能介紹資料
 
-    S3 key 格式：<version>/whats_new_<locale>.json
+    S3 key 格式：whatsnew/<version>/whats_new_<locale>.json
     """
 
     @property
@@ -16,7 +16,7 @@ class WhatsNewStore(BaseStore):
     def _build_key(self, key_id: str) -> str:
         """建構 S3 object key
 
-        格式：<version>/whats_new_<locale>.json
+        格式：whatsnew/<version>/whats_new_<locale>.json
         key_id 由呼叫端組合為 "<version>/<locale>"。
 
         Args:
@@ -26,7 +26,7 @@ class WhatsNewStore(BaseStore):
             str: S3 object key
         """
         version, locale = key_id.split("/", 1)
-        return f"{version}/whats_new_{locale}.json"
+        return f"whatsnew/{version}/whats_new_{locale}.json"
 
     def get_whats_new(self, version: str, locale: str) -> dict | None:
         """讀取指定版號與語系的新功能介紹資料

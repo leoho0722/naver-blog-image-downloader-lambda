@@ -23,7 +23,7 @@ Naver Blog 工具 API，部署於 AWS Lambda（容器映像模式）。透過模
   - `job.py` — `JobStore(BaseStore)`：任務 CRUD（`create_job`、`update_job`、`get_job`）
   - `log.py` — `LogStore(BaseStore)`：debug log 儲存（`save_logs`）
   - `whats_new.py` — `WhatsNewStore(BaseStore)`：新功能介紹資料讀取（`get_whats_new`）
-  - S3 key 格式：`jobs/{job_id}/{job_id}_results.json`、`jobs/{job_id}/{job_id}_logs.json`、`<version>/whats_new_<locale>.json`
+  - S3 key 格式：`jobs/{job_id}/{job_id}_results.json`、`jobs/{job_id}/{job_id}_logs.json`、`whatsnew/<version>/whats_new_<locale>.json`
 - `helper.py` — 工具函式（debug 輸出、log 收集 `get_logs`/`clear_logs`、時間計算）
 - `response_builder.py` — HTTP 回應格式建構（含 CORS headers）
 

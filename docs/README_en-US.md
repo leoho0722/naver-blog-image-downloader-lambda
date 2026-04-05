@@ -144,7 +144,7 @@ Response (completed, HTTP 200):
 
 Retrieves What's New data from S3 based on app version and locale.
 
-S3 path format: `<version>/whats_new_<locale>.json`
+S3 path format: `whatsnew/<version>/whats_new_<locale>.json`
 
 ```json
 {

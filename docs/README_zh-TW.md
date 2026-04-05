@@ -144,7 +144,7 @@ make deploy
 
 依 App 版號與語系從 S3 取得對應的新功能介紹資料。
 
-S3 路徑格式：`<version>/whats_new_<locale>.json`
+S3 路徑格式：`whatsnew/<version>/whats_new_<locale>.json`
 
 ```json
 {

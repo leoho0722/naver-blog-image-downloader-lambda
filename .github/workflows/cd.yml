@@ -27,7 +27,12 @@ jobs:
 
       - name: Generate image tag
         id: image_tag
-        run: echo "tag=$(date +'%y%m%d').${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+        run: |
+          DATE_PREFIX=$(date +'%y%m%d')
+          # 從 git tag 中找出當日最大序號，換日自動重置為 1
+          LAST_NUM=$(git tag --list "v${DATE_PREFIX}.*" --sort=-version:refname | head -n 1 | sed "s/v${DATE_PREFIX}\.//" || echo "-1")
+          NEXT_NUM=$(( ${LAST_NUM:--1} + 1 ))
+          echo "tag=${DATE_PREFIX}.${NEXT_NUM}" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
@@ -134,7 +139,7 @@ jobs:
                       "Sid": "S3WhatsNewRead",
                       "Effect": "Allow",
                       "Action": "s3:GetObject",
-                      "Resource": "arn:aws:s3:::${{ secrets.S3_BUCKET_NAME }}/*/whats_new_*.json"
+                      "Resource": "arn:aws:s3:::${{ secrets.S3_BUCKET_NAME }}/whatsnew/*"
                   },
                   {
                       "Sid": "LambdaSelfInvoke",
