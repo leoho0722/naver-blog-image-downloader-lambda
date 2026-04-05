@@ -30,38 +30,39 @@ class BaseStore(ABC):
         """
         ...
 
-    def _build_key(self, job_id: str) -> str:
+    def _build_key(self, key_id: str) -> str:
         """建構 S3 object key
 
-        格式：{prefix}{job_id}/{job_id}_{file_suffix}.json
+        預設格式：{prefix}{key_id}/{key_id}_{file_suffix}.json
+        子類別可覆寫以自訂 key 格式。
 
         Args:
-            job_id (str): 任務 ID
+            key_id (str): 識別碼（如任務 ID、版號等）
 
         Returns:
             str: S3 object key
         """
-        return f"{self._prefix}{job_id}/{job_id}_{self._file_suffix}.json"
+        return f"{self._prefix}{key_id}/{key_id}_{self._file_suffix}.json"
 
-    def _put_json(self, job_id: str, data: dict):
+    def _put_json(self, key_id: str, data: dict):
         """寫入 JSON 資料到 S3
 
         Args:
-            job_id (str): 任務 ID，用於建構 S3 key
+            key_id (str): 識別碼，用於建構 S3 key
             data (dict): 要寫入的 JSON 資料
         """
         self._s3.put_object(
             Bucket=self._bucket,
-            Key=self._build_key(job_id),
+            Key=self._build_key(key_id),
             Body=json.dumps(data, ensure_ascii=False),
             ContentType="application/json",
         )
 
-    def _get_json(self, job_id: str) -> dict | None:
+    def _get_json(self, key_id: str) -> dict | None:
         """從 S3 讀取 JSON 資料
 
         Args:
-            job_id (str): 任務 ID，用於建構 S3 key
+            key_id (str): 識別碼，用於建構 S3 key
 
         Returns:
             解析後的 JSON dict，若 key 不存在則回傳 None
@@ -69,7 +70,7 @@ class BaseStore(ABC):
         try:
             resp = self._s3.get_object(
                 Bucket=self._bucket,
-                Key=self._build_key(job_id),
+                Key=self._build_key(key_id),
             )
             return json.loads(resp["Body"].read().decode("utf-8"))
         except ClientError as e:

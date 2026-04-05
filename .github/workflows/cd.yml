@@ -99,6 +99,73 @@ jobs:
             --function-name ${{ secrets.AWS_LAMBDA_FUNCTION_NAME }} \
             --no-cli-pager
 
+      - name: Update IAM policy
+        run: |
+          # 取得 Lambda 執行角色與函數 ARN
+          ROLE_ARN=$(aws lambda get-function \
+            --function-name ${{ secrets.AWS_LAMBDA_FUNCTION_NAME }} \
+            --query 'Configuration.Role' \
+            --output text \
+            --no-cli-pager)
+          ROLE_NAME=$(echo "$ROLE_ARN" | sed 's|.*/||')
+
+          FUNCTION_ARN=$(aws lambda get-function \
+            --function-name ${{ secrets.AWS_LAMBDA_FUNCTION_NAME }} \
+            --query 'Configuration.FunctionArn' \
+            --output text \
+            --no-cli-pager)
+
+          POLICY_NAME="naver-blog-downloader-async-policy"
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --no-cli-pager)
+          POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME}"
+
+          # 建立新版本的 policy（覆蓋現有版本）
+          POLICY_DOC=$(cat <<EOF
+          {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Sid": "S3JobStorage",
+                      "Effect": "Allow",
+                      "Action": ["s3:PutObject", "s3:GetObject"],
+                      "Resource": "arn:aws:s3:::${{ secrets.S3_BUCKET_NAME }}/jobs/*"
+                  },
+                  {
+                      "Sid": "S3WhatsNewRead",
+                      "Effect": "Allow",
+                      "Action": "s3:GetObject",
+                      "Resource": "arn:aws:s3:::${{ secrets.S3_BUCKET_NAME }}/*/whats_new_*.json"
+                  },
+                  {
+                      "Sid": "LambdaSelfInvoke",
+                      "Effect": "Allow",
+                      "Action": "lambda:InvokeFunction",
+                      "Resource": "${FUNCTION_ARN}"
+                  }
+              ]
+          }
+          EOF
+          )
+
+          # 嘗試建立 policy，若已存在則更新
+          aws iam create-policy \
+            --policy-name "$POLICY_NAME" \
+            --policy-document "$POLICY_DOC" \
+            --no-cli-pager 2>/dev/null || \
+          aws iam create-policy-version \
+            --policy-arn "$POLICY_ARN" \
+            --policy-document "$POLICY_DOC" \
+            --set-as-default \
+            --no-cli-pager
+
+          # 確保 policy 已附加到角色
+          aws iam attach-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-arn "$POLICY_ARN" \
+            --no-cli-pager
+
+          echo "IAM policy 已更新並附加到角色 ${ROLE_NAME}"
+
       - name: Verify Lambda function status
         run: |
           aws lambda get-function \

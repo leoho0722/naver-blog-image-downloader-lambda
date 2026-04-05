@@ -2,41 +2,39 @@
 
 [繁體中文](README_zh-TW.md)
 
-This is a service deployed on AWS Lambda that extracts high-quality image URLs from Naver Blog articles. It uses an **async + polling** architecture to avoid the API Gateway 29-second timeout issue.
-
-## Features
-
-This service uses Playwright to automate browser operations and extract images from Naver Blog articles:
-
-1. Submit a download request and immediately receive a `job_id` (HTTP 202)
-2. Lambda processes the article in the background using a Chromium browser
-3. Automatically handles mobile and desktop version switching
-4. Locates all images in the article and clicks each one to retrieve original image URLs
-5. Results are stored in S3 and can be queried via a polling API
+A utility API deployed on AWS Lambda with a modular routing architecture supporting multiple endpoints. Currently includes extracting high-quality image URLs from Naver Blog articles and a What's New feature. Uses **API Gateway v2 (HTTP API)** + **async polling** architecture.
 
 ## Project Structure
 
 ```text
 .
-├── app.py                      # Lambda entry point, routes submit/status/async worker
+├── app.py                      # Lambda entry point, route dispatching
+├── router.py                   # Lightweight router (@route decorator)
+├── routes/                     # Route module package
+│   ├── __init__.py             #   Import all route modules
+│   ├── photos.py               #   /api/photos — image extraction
+│   └── whats_new.py            #   /api/whatsNew — What's New
 ├── data_models.py              # JobStatus enum, DownloadResult dataclass
-├── job_store.py                # S3 job state management (create/get/update job)
-├── helper.py                   # Helper functions (time calculation, debug output)
+├── job_store/                  # S3 storage package (OOP architecture)
+│   ├── base.py                 #   BaseStore (ABC)
+│   ├── job.py                  #   JobStore — job CRUD
+│   ├── log.py                  #   LogStore — debug logs
+│   └── whats_new.py            #   WhatsNewStore — What's New data
+├── helper.py                   # Helper functions (time, debug output)
 ├── response_builder.py         # HTTP Response Builder
-├── requirements.txt            # Python dependencies (playwright, boto3, awslambdaric)
-├── Dockerfile                  # Container image definition (based on playwright:v1.55.0-jammy)
+├── requirements.txt            # Python dependencies
+├── Dockerfile                  # Container image definition
 ├── Makefile                    # Deployment commands
 ├── pyproject.toml              # Ruff linter configuration
-├── .env                        # Environment variables configuration file (needs to be created)
-└── scripts/    
+└── scripts/
     ├── deploy-image.sh         # Build and upload Docker image to ECR
-    ├── update-function.sh      # Update Lambda function code and configuration
+    ├── update-function.sh      # Update Lambda function code and config
     └── setup-aws-resources.sh  # First-time AWS resource initialization (S3, IAM, Lambda)
 ```
 
-## Environment Variables Configuration
+## Environment Variables
 
-Rename `.envExample` to `.env` and configure the following environment variables:
+Rename `.envExample` to `.env` and configure the following:
 
 ```bash
 # AWS Credentials
@@ -63,15 +61,15 @@ DOCKERFILE_PATH=Dockerfile
 DEBUG_MODE=true
 ```
 
-## Deployment Steps
+## Deployment
 
 ### Prerequisites
 
 - Docker
 - AWS CLI
-- AWS ECR Repository (needs to be created manually)
+- AWS ECR Repository (create manually)
 - AWS Lambda Function (must use container image type)
-- AWS S3 Bucket (stores async job state, can be created automatically via `scripts/setup-aws-resources.sh`)
+- AWS S3 Bucket (stores async job state, can be created via `scripts/setup-aws-resources.sh`)
 
 ### 1. Build and Upload Docker Image
 
@@ -79,24 +77,11 @@ DEBUG_MODE=true
 make deploy-image
 ```
 
-This command will:
-
-- Build the Docker image
-- Log in to AWS ECR
-- Tag and upload the image to ECR
-- Clean up local images
-
 ### 2. Update Lambda Function
 
 ```bash
 make update-function
 ```
-
-This command will:
-
-- Update the Lambda function with the new Docker image
-- Wait for the update to complete
-- Display the function status
 
 ### 3. Complete Deployment in One Step
 
@@ -104,11 +89,11 @@ This command will:
 make deploy
 ```
 
-This command will execute `deploy-image` and `update-function` sequentially.
-
 ## API Usage
 
-### 1. Submit a Download Request
+### `POST /api/photos` — Image Extraction
+
+#### Submit a Download Request
 
 ```json
 {
@@ -126,21 +111,12 @@ Response (HTTP 202):
 }
 ```
 
-### 2. Query Job Status
+#### Query Job Status
 
 ```json
 {
   "action": "status",
   "job_id": "uuid-string"
-}
-```
-
-Response (processing, HTTP 200):
-
-```json
-{
-  "job_id": "uuid-string",
-  "status": "processing"
 }
 ```
 
@@ -164,27 +140,65 @@ Response (completed, HTTP 200):
 }
 ```
 
-### Response Fields
+### `POST /api/whatsNew` — What's New
 
-- `job_id`: Job ID (used for polling)
-- `status`: Job status (`processing` / `completed` / `failed`)
-- `result.total_images`: Total number of images found in the article
-- `result.successful_downloads`: Number of images with URLs successfully retrieved
-- `result.failure_downloads`: Number of images that failed to process
-- `result.image_urls`: List of image URLs
-- `result.errors`: List of error messages
-- `result.elapsed_time`: Processing time (in seconds)
+Retrieves What's New data from S3 based on app version and locale.
 
-## Lambda Function Configuration Recommendations
+S3 path format: `<version>/whats_new_<locale>.json`
+
+```json
+{
+  "version": "1.4.0",
+  "locale": "zh-TW"
+}
+```
+
+Response (HTTP 200):
+
+```json
+{
+  "version": "1.4.0",
+  "onboarding": [...],
+  "whatsNew": [...]
+}
+```
+
+### Response Fields (photos)
+
+| Field                         | Description                                      |
+| ----------------------------- | ------------------------------------------------ |
+| `job_id`                      | Job ID (used for polling)                        |
+| `status`                      | Job status (`processing` / `completed` / `failed`) |
+| `result.total_images`         | Total number of images found in the article      |
+| `result.successful_downloads` | Number of images with URLs successfully retrieved |
+| `result.failure_downloads`    | Number of images that failed to process          |
+| `result.image_urls`           | List of image URLs                               |
+| `result.errors`               | List of error messages                           |
+| `result.elapsed_time`         | Processing time (in seconds)                     |
+
+## CI/CD (GitHub Actions)
+
+- **CI** (`.github/workflows/ci.yml`): Triggered on push to any branch and PRs to main. Runs Ruff lint + format checks.
+- **CD** (`.github/workflows/cd.yml`): Triggered on push to main. Executes in order:
+  1. Build Docker image and push to ECR
+  2. Update AWS Lambda function code and configuration
+  3. Update IAM Policy (S3 + Lambda self-invoke permissions)
+  4. Create git tag (`vYYMMDD.RUN_NUMBER`)
+  5. Generate release notes via Ollama Cloud API
+  6. Publish GitHub Release
+
+**GitHub Secrets** (manual setup required): `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_ECR_REPOSITORY_URI`, `AWS_LAMBDA_FUNCTION_NAME`, `S3_BUCKET_NAME`, `OLLAMA_API_KEY`
+
+## Lambda Function Configuration
 
 - **Memory**: 2048 MB
 - **Timeout**: 120 seconds
-- **Ephemeral storage**: Recommended 512 MB or higher
+- **Ephemeral storage**: 512 MB or higher recommended
 - **Runtime**: Container Image
 
 ## Notes
 
-1. This service only extracts image URLs and does not actually download image files
+1. This service only extracts image URLs and does not download image files
 2. Uses a Chromium browser for web operations, which consumes more memory
 3. Processing time depends on the number of images in the article
 4. Job records in S3 are automatically expired and cleaned up after 1 day

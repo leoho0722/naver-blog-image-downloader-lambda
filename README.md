@@ -2,33 +2,31 @@
 
 [繁體中文](docs/README_zh-TW.md) | [English](docs/README_en-US.md)
 
-這是一個部署在 AWS Lambda 上的服務，用於從 Naver Blog 文章中提取高畫質圖片 URL。採用**非同步 + Polling** 架構，避免 API Gateway 29 秒超時問題。
-
-## 功能說明
-
-此服務使用 Playwright 自動化瀏覽器操作，從 Naver Blog 文章中擷取圖片：
-
-1. 提交下載請求，立即回傳 `job_id`（HTTP 202）
-2. Lambda 於背景以 Chromium 瀏覽器訪問文章
-3. 自動處理手機版與電腦版切換
-4. 定位文章中的所有圖片，逐一點擊取得原始圖片 URL
-5. 結果儲存至 S3，透過輪詢 API 查詢進度與結果
+這是一個部署在 AWS Lambda 上的工具 API，透過模組化路由架構支援多個端點。目前包含從 Naver Blog 文章擷取高畫質圖片 URL，以及新功能介紹等功能。採用 **API Gateway v2 (HTTP API)** + **非同步 Polling** 架構。
 
 ## 專案架構
 
 ```text
 .
-├── app.py                      # Lambda 入口點，路由 submit/status/async worker
+├── app.py                      # Lambda 入口點，路由分派
+├── router.py                   # 輕量級路由器（@route 裝飾器）
+├── routes/                     # 路由模組套件
+│   ├── __init__.py             #   匯入所有路由模組
+│   ├── photos.py               #   /api/photos — 圖片擷取
+│   └── whats_new.py            #   /api/whatsNew — 新功能介紹
 ├── data_models.py              # JobStatus enum、DownloadResult dataclass
-├── job_store.py                # S3 任務狀態管理（create/get/update job）
+├── job_store/                  # S3 儲存套件（OOP 架構）
+│   ├── base.py                 #   BaseStore（ABC）
+│   ├── job.py                  #   JobStore — 任務 CRUD
+│   ├── log.py                  #   LogStore — debug log
+│   └── whats_new.py            #   WhatsNewStore — 新功能介紹資料
 ├── helper.py                   # 輔助函數（時間計算、除錯輸出）
 ├── response_builder.py         # HTTP Response Builder
-├── requirements.txt            # Python 依賴套件（playwright、boto3、awslambdaric）
-├── Dockerfile                  # 容器映像定義（基於 playwright:v1.55.0-jammy）
+├── requirements.txt            # Python 依賴套件
+├── Dockerfile                  # 容器映像定義
 ├── Makefile                    # 部署相關指令
 ├── pyproject.toml              # Ruff linter 設定
-├── .env                        # 環境變數設定檔（需自行建立）
-└── scripts/    
+└── scripts/
     ├── deploy-image.sh         # 建構並上傳 Docker 映像至 ECR
     ├── update-function.sh      # 更新 Lambda 函數程式碼與設定
     └── setup-aws-resources.sh  # 首次 AWS 資源初始化（S3、IAM、Lambda）
@@ -79,24 +77,11 @@ DEBUG_MODE=true
 make deploy-image
 ```
 
-此指令會執行以下動作：
-
-- 建構 Docker 映像
-- 登入 AWS ECR
-- 標記並上傳映像至 ECR
-- 清理本地映像
-
 ### 2. 更新 Lambda 函數
 
 ```bash
 make update-function
 ```
-
-此指令會：
-
-- 使用新的 Docker 映像更新 Lambda 函數
-- 等待更新完成
-- 顯示函數狀態
 
 ### 3. 一次完成部署
 
@@ -104,11 +89,11 @@ make update-function
 make deploy
 ```
 
-此指令會依序執行 `deploy-image` 和 `update-function`。
-
 ## API 使用方式
 
-### 1. 提交下載請求
+### `POST /api/photos` — 圖片擷取
+
+#### 提交下載請求
 
 ```json
 {
@@ -126,21 +111,12 @@ make deploy
 }
 ```
 
-### 2. 查詢任務狀態
+#### 查詢任務狀態
 
 ```json
 {
   "action": "status",
   "job_id": "uuid-string"
-}
-```
-
-回應（處理中，HTTP 200）：
-
-```json
-{
-  "job_id": "uuid-string",
-  "status": "processing"
 }
 ```
 
@@ -164,16 +140,54 @@ make deploy
 }
 ```
 
-### 回應欄位說明
+### `POST /api/whatsNew` — 新功能介紹
 
-- `job_id`: 任務 ID（用於輪詢查詢）
-- `status`: 任務狀態（`processing` / `completed` / `failed`）
-- `result.total_images`: 文章中找到的圖片總數
-- `result.successful_downloads`: 成功取得 URL 的圖片數量
-- `result.failure_downloads`: 處理失敗的圖片數量
-- `result.image_urls`: 圖片 URL 清單
-- `result.errors`: 錯誤訊息清單
-- `result.elapsed_time`: 處理時間（秒）
+依 App 版號與語系從 S3 取得對應的新功能介紹資料。
+
+S3 路徑格式：`<version>/whats_new_<locale>.json`
+
+```json
+{
+  "version": "1.4.0",
+  "locale": "zh-TW"
+}
+```
+
+回應（HTTP 200）：
+
+```json
+{
+  "version": "1.4.0",
+  "onboarding": [...],
+  "whatsNew": [...]
+}
+```
+
+### 回應欄位說明（photos）
+
+| 欄位 | 說明 |
+|------|------|
+| `job_id` | 任務 ID（用於輪詢查詢） |
+| `status` | 任務狀態（`processing` / `completed` / `failed`） |
+| `result.total_images` | 文章中找到的圖片總數 |
+| `result.successful_downloads` | 成功取得 URL 的圖片數量 |
+| `result.failure_downloads` | 處理失敗的圖片數量 |
+| `result.image_urls` | 圖片 URL 清單 |
+| `result.errors` | 錯誤訊息清單 |
+| `result.elapsed_time` | 處理時間（秒） |
+
+## CI/CD（GitHub Actions）
+
+- **CI**（`.github/workflows/ci.yml`）：所有分支 push 及 PR 到 main 時觸發，執行 Ruff lint + format 檢查
+- **CD**（`.github/workflows/cd.yml`）：push 到 main 時觸發，依序執行：
+  1. 建構 Docker 映像並推送至 ECR
+  2. 更新 AWS Lambda 函數程式碼與設定
+  3. 更新 IAM Policy（S3 + Lambda 自我呼叫權限）
+  4. 建立 git tag（`vYYMMDD.RUN_NUMBER`）
+  5. 透過 Ollama Cloud API 生成正體中文 Release Notes
+  6. 發布 GitHub Release
+
+**GitHub Secrets**（需手動設定）：`AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`、`AWS_REGION`、`AWS_ECR_REPOSITORY_URI`、`AWS_LAMBDA_FUNCTION_NAME`、`S3_BUCKET_NAME`、`OLLAMA_API_KEY`
 
 ## Lambda 函數設定建議
 

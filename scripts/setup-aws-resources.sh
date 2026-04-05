@@ -129,6 +129,12 @@ POLICY_DOC=$(cat <<EOF
             "Resource": "arn:aws:s3:::${S3_BUCKET_NAME}/jobs/*"
         },
         {
+            "Sid": "S3WhatsNewRead",
+            "Effect": "Allow",
+            "Action": "s3:GetObject",
+            "Resource": "arn:aws:s3:::${S3_BUCKET_NAME}/*/whats_new_*.json"
+        },
+        {
             "Sid": "LambdaSelfInvoke",
             "Effect": "Allow",
             "Action": "lambda:InvokeFunction",

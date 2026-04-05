@@ -1,0 +1,43 @@
+{
+    "version": "1.4.0",
+    "onboarding": [
+        {
+            "type": "text",
+            "icon": "content_paste",
+            "title": "Blog URLを貼り付け",
+            "description": "Naver BlogのURLをコピーして貼り付けてください（Naver Blogの共有ボタンから取得）"
+        },
+        {
+            "type": "text",
+            "icon": "photo_library",
+            "title": "すべての写真を取得",
+            "description": "ボタンをタップしてダウンロードを開始"
+        },
+        {
+            "type": "text",
+            "icon": "download",
+            "title": "ダウンロード・保存",
+            "description": "写真を1枚ずつ、またはすべてをフォトライブラリに保存"
+        },
+        {
+            "type": "text",
+            "icon": "swipe",
+            "title": "写真を閲覧",
+            "description": "スワイプして没入感のある写真閲覧"
+        }
+    ],
+    "whatsNew": [
+        {
+            "type": "text",
+            "icon": "auto_awesome",
+            "title": "新機能紹介ページ",
+            "description": "アップデート後に新機能を自動表示。初回インストール時は操作ガイドを表示します。"
+        },
+        {
+            "type": "image",
+            "base64Image": "iVBORw0KGgoAAAANSUhEUgAA...",
+            "title": "写真を閲覧",
+            "description": "スワイプして没入感のある写真閲覧"
+        }
+    ]
+}

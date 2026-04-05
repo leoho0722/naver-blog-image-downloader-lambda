@@ -1,0 +1,43 @@
+{
+    "version": "1.4.0",
+    "onboarding": [
+        {
+            "type": "text",
+            "icon": "content_paste",
+            "title": "블로그 URL 붙여넣기",
+            "description": "Naver Blog URL을 복사하여 붙여넣으세요 (Naver Blog의 공유 버튼에서 가져오기)"
+        },
+        {
+            "type": "text",
+            "icon": "photo_library",
+            "title": "모든 사진 가져오기",
+            "description": "버튼을 눌러 다운로드 시작"
+        },
+        {
+            "type": "text",
+            "icon": "download",
+            "title": "다운로드 및 저장",
+            "description": "사진을 개별 또는 전체 선택하여 사진 라이브러리에 저장"
+        },
+        {
+            "type": "text",
+            "icon": "swipe",
+            "title": "사진 둘러보기",
+            "description": "스와이프하여 몰입감 있는 사진 감상"
+        }
+    ],
+    "whatsNew": [
+        {
+            "type": "text",
+            "icon": "auto_awesome",
+            "title": "새 기능 소개 페이지",
+            "description": "업데이트 후 자동으로 새 기능을 표시합니다. 첫 설치 시 사용 가이드를 표시합니다."
+        },
+        {
+            "type": "image",
+            "base64Image": "iVBORw0KGgoAAAANSUhEUgAA...",
+            "title": "사진 둘러보기",
+            "description": "스와이프하여 몰입감 있는 사진 감상"
+        }
+    ]
+}

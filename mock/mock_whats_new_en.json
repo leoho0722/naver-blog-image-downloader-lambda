@@ -1,0 +1,43 @@
+{
+    "version": "1.4.0",
+    "onboarding": [
+        {
+            "type": "text",
+            "icon": "content_paste",
+            "title": "Paste Blog URL",
+            "description": "Copy and paste a Naver Blog URL (get it from the share button in Naver Blog)"
+        },
+        {
+            "type": "text",
+            "icon": "photo_library",
+            "title": "Get All Photos",
+            "description": "Tap the button to start downloading"
+        },
+        {
+            "type": "text",
+            "icon": "download",
+            "title": "Download & Save",
+            "description": "Save individual or all photos to your photo library"
+        },
+        {
+            "type": "text",
+            "icon": "swipe",
+            "title": "Browse Photos",
+            "description": "Swipe through photos in immersive view"
+        }
+    ],
+    "whatsNew": [
+        {
+            "type": "text",
+            "icon": "auto_awesome",
+            "title": "What's New Page",
+            "description": "Automatically shows new features after an update. First-time install displays an onboarding guide."
+        },
+        {
+            "type": "image",
+            "base64Image": "iVBORw0KGgoAAAANSUhEUgAA...",
+            "title": "Browse Photos",
+            "description": "Swipe through photos in immersive view"
+        }
+    ]
+}
