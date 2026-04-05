@@ -164,15 +164,31 @@ jobs:
           )
 
           # 嘗試建立 policy，若已存在則更新
-          aws iam create-policy \
+          if ! aws iam create-policy \
             --policy-name "$POLICY_NAME" \
             --policy-document "$POLICY_DOC" \
-            --no-cli-pager 2>/dev/null || \
-          aws iam create-policy-version \
-            --policy-arn "$POLICY_ARN" \
-            --policy-document "$POLICY_DOC" \
-            --set-as-default \
-            --no-cli-pager
+            --no-cli-pager 2>/dev/null; then
+
+            # 刪除最舊的非預設版本，避免超過 5 版上限
+            OLDEST_VERSION=$(aws iam list-policy-versions \
+              --policy-arn "$POLICY_ARN" \
+              --query 'Versions[?IsDefaultVersion==`false`] | [-1].VersionId' \
+              --output text \
+              --no-cli-pager)
+            if [ -n "$OLDEST_VERSION" ] && [ "$OLDEST_VERSION" != "None" ]; then
+              aws iam delete-policy-version \
+                --policy-arn "$POLICY_ARN" \
+                --version-id "$OLDEST_VERSION" \
+                --no-cli-pager
+              echo "已刪除舊版本 ${OLDEST_VERSION}"
+            fi
+
+            aws iam create-policy-version \
+              --policy-arn "$POLICY_ARN" \
+              --policy-document "$POLICY_DOC" \
+              --set-as-default \
+              --no-cli-pager
+          fi
 
           # 確保 policy 已附加到角色
           aws iam attach-role-policy \

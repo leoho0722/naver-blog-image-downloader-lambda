@@ -168,13 +168,27 @@ if [ -z "$POLICY_ARN" ] || [ "$POLICY_ARN" = "None" ]; then
     POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME}"
     echo "Policy 可能已存在，使用 ARN: $POLICY_ARN"
 
+    # 刪除最舊的非預設版本，避免超過 5 版上限
+    OLDEST_VERSION=$(aws iam list-policy-versions \
+        --policy-arn $POLICY_ARN \
+        --query 'Versions[?IsDefaultVersion==`false`] | [-1].VersionId' \
+        --output text \
+        --no-cli-pager 2>/dev/null)
+    if [ -n "$OLDEST_VERSION" ] && [ "$OLDEST_VERSION" != "None" ]; then
+        echo "刪除舊版本 ${OLDEST_VERSION}..."
+        aws iam delete-policy-version \
+            --policy-arn $POLICY_ARN \
+            --version-id $OLDEST_VERSION \
+            --no-cli-pager
+    fi
+
     # 更新現有 Policy
     echo "更新現有 Policy..."
     aws iam create-policy-version \
         --policy-arn $POLICY_ARN \
         --policy-document "$POLICY_DOC" \
         --set-as-default \
-        --no-cli-pager 2>/dev/null
+        --no-cli-pager
 else
     echo "Policy 建立成功: $POLICY_ARN"
 fi
