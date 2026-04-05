@@ -28,6 +28,18 @@ def debug_print(message: str):
         print(f"[DEBUG] {message}")
 
 
+def log_entry(data: dict):
+    """記錄結構化 log entry（非純文字訊息），附加 timestamp 後直接存入 log list
+
+    Args:
+        data (dict): 結構化資料（如 response statusCode + body）
+    """
+    entry = {"timestamp": time.time(), **data}
+    _logs.append(entry)
+    if is_debug_mode():
+        print(f"[DEBUG] {entry}")
+
+
 def get_logs() -> list[dict]:
     """取得收集的 log list
 
